@@ -1,0 +1,5 @@
+# Normalize line endings for cross-platform CI.
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.jpeg binary
