@@ -1,9 +1,10 @@
 # 004-natural-language-search — Búsqueda en lenguaje natural
 
 - **Estado:** PLANNED
-- **Depende de:** 001-foundation, 002-provider-abstraction
+- **Depende de:** 001-foundation, 002-provider-abstraction, 011-llm-provider
 - **Habilita:** 010-integration-thehouse
 - **Fecha de alta:** 2026-11-08
+- **Última revisión:** 2026-11-12
 
 ## Objetivo
 
@@ -85,5 +86,5 @@ Salida:
 
 ## Fuera de esta spec
 
-No se implementa nada de este documento en G01. La spec permanece PLANNED hasta que
-el Backend, la seguridad y los contratos estén aprobados y sea su turno.
+Esta spec permanece `PLANNED` hasta que sea su turno. No se activa hasta que su plan
+esté aprobado.

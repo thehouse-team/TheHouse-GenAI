@@ -1,6 +1,6 @@
 # Constitución — TheHouse GenAI
 
-Versión 1.0 · Ratificada 2026-11-08 · Aplica a todo el repositorio.
+Versión 1.1 · Ratificada 2026-11-12 · Aplica a todo el repositorio.
 
 ## Preámbulo
 
@@ -40,7 +40,8 @@ cabeceras sensibles ni credenciales.
 
 Toda capacidad LLM se consume a través de una interfaz propia (spec 002). La capa de
 aplicación no conoce SDKs ni formatos de proveedor. El proveedor real es reemplazable y
-las pruebas usan un doble de test; nunca se depende de la red en CI.
+las pruebas usan un doble de test; nunca se depende de la red en CI. El adaptador concreto
+de un proveedor se define en la spec 011, detrás del mismo puerto.
 
 ## Artículo 6 — Contratos explícitos
 
@@ -60,8 +61,18 @@ de la spec.
 
 Cada incremento vive en `specs/NNN-*` con `spec.md`, `plan.md`, `task.md`, `checklist.md`
 y `evidence.md`. No se implementa una spec sin plan aprobado ni se cierra sin evidencia.
-Solo una spec puede estar `IMPLEMENTED` a la vez; el resto permanece `PLANNED` hasta su
-turno. Este repositorio arranca con `001-foundation` como única spec implementada.
+
+Cada spec recorre tres estados: `PLANNED` → `ACTIVE` → `IMPLEMENTED`.
+
+- `PLANNED`: especificada y revisada, pero fuera de turno de implementación.
+- `ACTIVE`: spec en curso; es la única que puede recibir cambios de código.
+- `IMPLEMENTED`: criterios de aceptación verificados, gates en verde y evidencia
+  registrada.
+
+Solo una spec puede estar `ACTIVE` a la vez. Al cerrar una spec se marca `IMPLEMENTED` y
+la siguiente pasa a `ACTIVE`; las demás permanecen `PLANNED`. La spec `ACTIVE` se declara
+en `memoria.md`. Este repositorio arranca con `001-foundation` como única spec
+`IMPLEMENTED`.
 
 ## Artículo 9 — Stack y simplicidad
 
@@ -79,3 +90,12 @@ gates. No se hace commit con gates en rojo. No hay CD ni despliegue en G01.
 Una contribución que viole cualquier artículo debe rechazarse aunque funcione. Las
 excepciones requieren una enmienda explícita de esta constitución y quedan registradas en
 `memoria.md`.
+
+## Enmiendas
+
+| Versión | Fecha | Cambio | Motivo |
+| --- | --- | --- | --- |
+| 1.1 | 2026-11-12 | Artículo 8: estados `PLANNED` → `ACTIVE` → `IMPLEMENTED` y regla de una sola spec `ACTIVE`. Artículo 5: el adaptador concreto de proveedor se define en la spec 011. | Desacoplar la spec en curso del roadmap y separar el contrato del puerto de la integración con un proveedor real. |
+
+La versión 1.0 fue ratificada el 2026-11-08. Toda enmienda futura se registra en esta
+tabla y en `memoria.md`.

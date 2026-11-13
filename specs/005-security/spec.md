@@ -34,7 +34,9 @@ G01 ya aplica límites de request, CORS restrictivo, errores seguros y logs estr
 
 ## Requisitos
 
-- **RF-01:** solo health es público; todo endpoint generativo exige autenticación de servicio.
+- **RF-01:** solo health es público; todo endpoint generativo exige autenticación de
+  servicio. La spec 003 ya incorpora autenticación mínima (`X-Service-Key`); esta spec la
+  endurece con rotación, mTLS o secreto negociado con Backend y rate limiting.
 - **RF-02:** se rechazan y no se reenvían access/refresh tokens de usuario.
 - **RF-03:** cada endpoint define allowlist de campos y rechaza PII innecesaria.
 - **RF-04:** logs y errores redactan tokens, API keys, passwords y PII.
@@ -55,12 +57,13 @@ G01 ya aplica límites de request, CORS restrictivo, errores seguros y logs estr
 ## Seguridad y privacidad
 
 - Secretos solo en entorno/gestor; nunca en repo, imagen ni logs.
-- Autenticación de servicio con secreto rotable o mTLS acordado con Backend.
+- Autenticación de servicio con secreto rotable o mTLS acordado con Backend. Parte de la
+  autenticación mínima de la spec 003 y la endurece; no la sustituye.
 - Defensa en profundidad: validación de entrada, prompt delimitado, validación de salida.
 - Minimización estricta de PII; rechazar dirección exacta y datos del propietario.
 - Fail closed: si falla la autenticación o validación, no se llama al proveedor.
 
 ## Fuera de esta spec
 
-No se implementa nada de este documento en G01. La spec permanece PLANNED hasta que
-el Backend, la seguridad y los contratos estén aprobados y sea su turno.
+Esta spec permanece `PLANNED` hasta que sea su turno. No se activa hasta que su plan
+esté aprobado.

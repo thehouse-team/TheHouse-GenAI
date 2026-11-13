@@ -1,7 +1,7 @@
 # Plan — 003-smart-match-explanation Explicación de Smart Match
 
 - **Estado:** PLANNED
-- **Depende de:** 001-foundation, 002-provider-abstraction
+- **Depende de:** 001-foundation, 002-provider-abstraction, 011-llm-provider
 
 ## Enfoque técnico
 
@@ -11,6 +11,8 @@
 4. Extraer números de la salida y comprobar que coincidan con la entrada.
 5. Usar fake provider para probar guardrails sin depender del modelo.
 6. Mapear fallos de generación a 502 sin filtrar detalles del proveedor.
+7. La autenticación es una dependencia de FastAPI con comparación en tiempo constante;
+   falla cerrado antes de tocar el proveedor.
 
 ## Pasos previstos
 
@@ -18,15 +20,19 @@
 2. Implementar schemas y validaciones de entrada.
 3. Implementar constructor de contexto y prompt con delimitadores.
 4. Implementar validador de salida y `facts_used`.
-5. Crear caso de uso y endpoint autenticado.
-6. Añadir pruebas de fidelidad, límites e inyección.
-7. Actualizar SDD y evidencia.
+5. Implementar la dependencia de autenticación de servicio (`X-Service-Key`, credencial en
+   `Settings` como `SecretStr`, comparación en tiempo constante).
+6. Crear el caso de uso y el endpoint protegido por esa dependencia.
+7. Añadir pruebas de fidelidad, límites e inyección.
+8. Actualizar SDD y evidencia.
 
 ## Archivos previstos
 
 - `src/thehouse_genai/domain/match_explanation.py`
 - `src/thehouse_genai/application/explain_match.py`
 - `src/thehouse_genai/api/routes/generative.py`
+- `src/thehouse_genai/api/auth.py`
+- `src/thehouse_genai/infrastructure/config.py`
 - `tests/test_explain_match.py`
 
 ## Estrategia de pruebas
@@ -36,6 +42,8 @@
 - Salida con número/servicio inventado se rechaza.
 - Intento de prompt injection no altera hechos.
 - Timeout/error del proveedor produce 502 seguro.
+- Sin `X-Service-Key` y con `X-Service-Key` incorrecto se responde 401 con el sobre
+  estándar y sin filtrar detalles.
 
 ## Riesgos y mitigaciones
 

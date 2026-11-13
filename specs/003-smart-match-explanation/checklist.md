@@ -11,6 +11,9 @@
 - [ ] Score faltante o fuera de rango devuelve 422.
 - [ ] Pruebas con fake provider, sin red.
 - [ ] No existe acceso a base de datos ni a propiedades.
+- [ ] Endpoint sin `X-Service-Key` devuelve 401 con el sobre estándar.
+- [ ] `X-Service-Key` incorrecto devuelve 401 sin revelar si la credencial existe.
+- [ ] La credencial no aparece en logs ni en el `repr` de `Settings`.
 
 ## Seguridad
 
@@ -18,7 +21,9 @@
 - [ ] No registrar prompt ni explicación completos por defecto.
 - [ ] Defensa contra prompt injection en todos los campos de texto libre.
 - [ ] Limitar longitud de entrada y salida.
-- [ ] Autenticación servicio-a-servicio antes de exponer el endpoint (spec 005).
+- [ ] Autenticación mínima de servicio implementada (`X-Service-Key`, `SecretStr`,
+      comparación en tiempo constante, 401 con el sobre estándar).
+- [ ] La autenticación endurecida (rotación, mTLS, rate limiting) queda para la spec 005.
 
 ## SDD y calidad
 

@@ -1,9 +1,10 @@
 # 003-smart-match-explanation — Explicación de Smart Match
 
 - **Estado:** PLANNED
-- **Depende de:** 001-foundation, 002-provider-abstraction
+- **Depende de:** 001-foundation, 002-provider-abstraction, 011-llm-provider
 - **Habilita:** 010-integration-thehouse
 - **Fecha de alta:** 2026-11-08
+- **Última revisión:** 2026-11-12
 
 ## Objetivo
 
@@ -22,6 +23,9 @@ Smart Match es una función ML del Backend. GenAI no lo calcula. El endpoint fut
 - Prompt acotado y allowlist de hechos que pueden mencionarse.
 - Validación de salida: sin números ni servicios no presentes en la entrada.
 - Respuesta breve con `explanation` y `facts_used`.
+- Autenticación mínima servicio-a-servicio: header `X-Service-Key`, credencial en
+  `Settings` como `SecretStr`, comparación en tiempo constante y `401` con el sobre de
+  error estándar.
 - Pruebas con fake provider e intentos de prompt injection.
 
 ### Excluido
@@ -30,6 +34,8 @@ Smart Match es una función ML del Backend. GenAI no lo calcula. El endpoint fut
 - Consulta de propiedades, precios, distancias o disponibilidad.
 - Dirección exacta, datos del propietario o PII innecesaria.
 - Proveedor real y despliegue.
+- Autenticación de usuarios finales, mTLS, rotación de secretos y rate limiting (spec
+  005).
 
 ## Requisitos
 
@@ -40,6 +46,9 @@ Smart Match es una función ML del Backend. GenAI no lo calcula. El endpoint fut
 - **RF-05:** la explicación tiene un máximo de 120 palabras.
 - **RF-06:** entradas inconsistentes o incompletas se rechazan con 422.
 - **RF-07:** texto libre de propiedad se trata como dato, no como instrucción.
+- **RF-08:** el endpoint exige el header `X-Service-Key`; sin credencial válida responde
+  401 con `{"error": {"code", "message", "request_id"}}`.
+- **RF-09:** la credencial se compara en tiempo constante y nunca se registra.
 
 ## Criterios de aceptación
 
@@ -50,6 +59,9 @@ Smart Match es una función ML del Backend. GenAI no lo calcula. El endpoint fut
 - [ ] Score faltante o fuera de rango devuelve 422.
 - [ ] Pruebas con fake provider, sin red.
 - [ ] No existe acceso a base de datos ni a propiedades.
+- [ ] Endpoint sin `X-Service-Key` devuelve 401 con el sobre estándar.
+- [ ] `X-Service-Key` incorrecto devuelve 401 sin revelar si la credencial existe.
+- [ ] La credencial no aparece en logs ni en el `repr` de `Settings`.
 
 ## Seguridad y privacidad
 
@@ -57,7 +69,10 @@ Smart Match es una función ML del Backend. GenAI no lo calcula. El endpoint fut
 - No registrar prompt ni explicación completos por defecto.
 - Defensa contra prompt injection en todos los campos de texto libre.
 - Limitar longitud de entrada y salida.
-- Autenticación servicio-a-servicio antes de exponer el endpoint (spec 005).
+- Autenticación mínima servicio-a-servicio en esta spec (`X-Service-Key` en `Settings`
+  como `SecretStr`, comparación en tiempo constante, 401 con el sobre estándar) para
+  cumplir el artículo 7 de la constitución. La spec 005 endurece esta autenticación
+  (rotación, mTLS o secreto negociado con Backend, rate limiting y filtrado de PII).
 
 ## Contrato futuro (referencia)
 
@@ -92,5 +107,5 @@ El score no se devuelve ni se modifica; solo se usa como contexto.
 
 ## Fuera de esta spec
 
-No se implementa nada de este documento en G01. La spec permanece PLANNED hasta que
-el Backend, la seguridad y los contratos estén aprobados y sea su turno.
+Esta spec permanece `PLANNED` hasta que sea su turno. No se activa hasta que su plan
+esté aprobado.

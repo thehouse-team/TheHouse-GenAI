@@ -57,5 +57,5 @@ G01 ya emite logs JSON con request ID y health probes. Al añadir LLM se necesit
 
 ## Fuera de esta spec
 
-No se implementa nada de este documento en G01. La spec permanece PLANNED hasta que
-el Backend, la seguridad y los contratos estén aprobados y sea su turno.
+Esta spec permanece `PLANNED` hasta que sea su turno. No se activa hasta que su plan
+esté aprobado.

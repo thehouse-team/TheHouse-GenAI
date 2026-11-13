@@ -6,27 +6,28 @@
 
 ## Diseño
 
-- [ ] Aprobar DTOs y firma del puerto.
-- [ ] Definir taxonomía de errores y política de timeout.
-- [ ] Definir estrategia de inyección y configuración.
+- [ ] Aprobar DTOs y firma del protocolo `GenerativeAiProvider`.
+- [ ] Definir taxonomía de errores (`ProviderTimeoutError`, `ProviderAuthError`,
+      `ProviderRateLimitError`, `ProviderUnavailableError`,
+      `ProviderInvalidResponseError`, `ProviderInputTooLargeError`) y política de timeout.
+- [ ] Definir estrategia de inyección, configuración y factory.
 
 ## Implementación
 
-- [ ] Crear `providers/base.py` con puerto y DTOs.
-- [ ] Implementar adaptador httpx.
-- [ ] Implementar `FakeLLMProvider`.
-- [ ] Validar proveedor/modelo/timeout en `Settings`.
+- [ ] Crear `providers/base.py` con protocolo, DTOs y errores.
+- [ ] Implementar `FakeProvider` determinista.
+- [ ] Implementar `providers/factory.py` con validación del proveedor soportado.
+- [ ] Validar proveedor, modelo, timeout y límite de entrada en `Settings`.
 
-## Pruebas y cierre
+## Pruebas
 
-- [ ] Añadir tests de contrato, timeout y errores.
-- [ ] Añadir test de frontera de imports.
-- [ ] Ejecutar ruff, mypy y pytest.
-- [ ] Actualizar checklist, evidence y memoria.
+- [ ] Añadir tests de contrato, timeout, errores y límite de entrada.
+- [ ] Añadir test de frontera de imports (sin httpx ni SDKs).
+- [ ] Añadir test que verifique que la suite no usa red.
 
 ## Cierre
 
-- [ ] Actualizar `checklist.md` y `evidence.md` con resultados reales.
 - [ ] Ejecutar `ruff check .`, `mypy src` y `pytest`.
+- [ ] Actualizar `checklist.md`, `evidence.md` y `memoria.md` con resultados reales.
 - [ ] Revisar seguridad y ausencia de secretos/PII.
 - [ ] Cambiar el estado a IMPLEMENTED solo al cumplir todo.
