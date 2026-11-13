@@ -1,6 +1,6 @@
 # 002-provider-abstraction — Abstracción de proveedor LLM
 
-- **Estado:** ACTIVE
+- **Estado:** IMPLEMENTED
 - **Depende de:** 001-foundation
 - **Habilita:** 003, 004, 011
 - **Fecha de alta:** 2026-11-08
@@ -126,7 +126,8 @@ y control de secretos. La evaluación de proveedores y el adaptador real viven e
 
 ## Fuera de esta spec
 
-Esta spec está `ACTIVE` desde 2026-11-13. Su alcance es el puerto, los DTOs, la
-taxonomía de errores, el guard central, el fake, la factory y la configuración validada.
-No incluye adaptadores reales, llamadas de red, endpoints generativos, prompts de
-negocio ni credenciales.
+Esta spec estuvo `ACTIVE` del 2026-11-12 al 2026-11-13 y se cerró como `IMPLEMENTED`
+con sus criterios verificados y la evidencia registrada. Su alcance fue el puerto, los
+DTOs, la taxonomía de errores, el guard central, el fake, la factory y la configuración
+validada. No incluyó adaptadores reales, llamadas de red, endpoints generativos, prompts
+de negocio ni credenciales.

@@ -6,13 +6,13 @@ estructurados. No calcula Smart Match, no consulta propiedades y no sustituye al
 
 ## Estado
 
-G01 Foundation implementado. G02 (`002-provider-abstraction`) está `ACTIVE`: define el
-puerto `GenerativeAiProvider`, sus DTOs inmutables, la taxonomía de errores, el guard
-central de timeout y límite de entrada, un `FakeProvider` determinista y la factory de
-selección. Todo es offline: ningún módulo abre un socket y no hay proveedor real. El
-roadmap por fases (G01–G10) y el estado de cada spec están en `memoria.md`. El
-proveedor LLM real y los contratos de IA (`explain-match`, `parse-search`) siguen
-planificados en `specs/` y todavía no se implementan.
+G01 Foundation y G02 (`002-provider-abstraction`) implementados. G02 define el puerto
+`GenerativeAiProvider`, sus DTOs inmutables, la taxonomía de errores, el guard central
+de timeout y límite de entrada, un `FakeProvider` determinista y la factory de
+selección: todo offline, sin sockets y sin proveedor real. El roadmap por fases
+(G01–G10) y el estado de cada spec están en `memoria.md`. El proveedor LLM real y los
+contratos de IA (`explain-match`, `parse-search`) siguen planificados en `specs/` y
+todavía no se implementan.
 
 ## Ejecución local
 

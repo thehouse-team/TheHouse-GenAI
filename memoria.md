@@ -13,7 +13,7 @@ Smart Match, no consulta propiedades y no contiene Mobile.
 | Spec | Estado | Alcance |
 | --- | --- | --- |
 | 001-foundation | IMPLEMENTED | Servicio mínimo, health, config, seguridad base, tests, CI |
-| 002-provider-abstraction | ACTIVE | Puerto `GenerativeAiProvider`, DTOs, errores, fake y factory (offline) |
+| 002-provider-abstraction | IMPLEMENTED | Puerto `GenerativeAiProvider`, DTOs, errores, fake y factory (offline) |
 | 003-smart-match-explanation | PLANNED | Explicación de match sin alterar hechos, con auth mínima de servicio |
 | 004-natural-language-search | PLANNED | Parseo de búsqueda a filtros, nunca propiedades |
 | 005-security | PLANNED | Autenticación de servicio endurecida, PII, prompt injection |
@@ -29,7 +29,7 @@ Smart Match, no consulta propiedades y no contiene Mobile.
 | Fase | Spec | Contenido |
 | --- | --- | --- |
 | G01 | 001-foundation | Servicio base, health, configuración, CI (IMPLEMENTED) |
-| G02 | 002-provider-abstraction | Puerto LLM, DTOs, errores, fake y factory, 100% offline (ACTIVE) |
+| G02 | 002-provider-abstraction | Puerto LLM, DTOs, errores, fake y factory, 100% offline (IMPLEMENTED) |
 | G03 | 011-llm-provider | Evaluación de proveedores y adaptador real |
 | G04 | 003-smart-match-explanation | Endpoint explain-match con auth mínima de servicio |
 | G05 | 005-security | Endurecimiento de seguridad, PII, prompt injection |
@@ -45,10 +45,11 @@ cobertura) se acumulan en cada fase y la spec se cierra en G09, junto con
 
 ## Spec activa
 
-`002-provider-abstraction` (G02). Es la única spec `ACTIVE`; `001-foundation` queda
-`IMPLEMENTED` y el resto sigue `PLANNED`. La spec activa se declara en la tabla de estado
-y en el encabezado de sus cinco archivos de `specs/002-provider-abstraction/`. Sus
-decisiones de diseño aprobadas (D-1 a D-15) están en `specs/002-provider-abstraction/spec.md`.
+Ninguna. `002-provider-abstraction` pasó a `IMPLEMENTED` el 2026-11-13 con sus
+criterios verificados y la evidencia registrada en
+`specs/002-provider-abstraction/evidence.md`. La siguiente spec en orden es
+`011-llm-provider` (G03), que se activa en su propia rama cuando se apruebe su plan.
+Solo una spec puede estar `ACTIVE` a la vez.
 
 ## Enmiendas de la constitución
 
@@ -102,16 +103,63 @@ decisiones de diseño aprobadas (D-1 a D-15) están en `specs/002-provider-abstr
 `GENAI_MAX_INPUT_CHARS` (4000). En G01 y G02 no se usan para llamadas externas: 002 solo
 los valida y la factory solo admite `fake`; 011 los consume en el adaptador real.
 
+## Decisiones tomadas en 002
+
+- D-1: puerto, DTOs, taxonomía de errores y guard viven en `providers/base.py`;
+  `domain/` y `application/` no se modificaron en G02 ni importan implementaciones de
+  proveedor.
+- D-2: el timeout no forma parte de la firma del puerto; un guard central lo aplica con
+  `asyncio.wait_for` y cancela la operación interna al excederlo.
+- D-3: el timeout se prueba por doble vía: inyección de `TimeoutError` sin espera y
+  `hang` con timeout de 0,05 s.
+- D-4: los tests async usan `asyncio.run` dentro de tests síncronos; no se añadió
+  `pytest-asyncio` ni se tocó `pyproject.toml`.
+- D-5: `UnsupportedProviderError` deriva de `ValueError` y queda fuera de la taxonomía
+  `ProviderError`: es un fallo de configuración, no de una llamada.
+- D-6: el límite de entrada mide `len(prompt) + len(system_prompt)` y solo compara
+  longitudes.
+- D-7: los DTOs fijan prompt, system prompt, formato de respuesta, temperatura y tokens
+  máximos; la respuesta añade uso, motivo de fin y modelo interno.
+- D-8: una excepción inesperada del proveedor se normaliza a `ProviderUnavailableError`
+  y un `ValidationError` a `ProviderInvalidResponseError`, ambos con la causa
+  encadenada.
+- D-9: `FakeProvider` registra las requests recibidas en memoria, solo para aserciones
+  de test; nunca se registran ni se serializan.
+- D-10: `pyproject.toml` no se modificó en G02.
+- D-11: el guard se implementó en `providers/base.py`, dentro de los archivos previstos.
+- D-12: G02 no añadió logging ni amplía la allowlist del logging JSON.
+- D-13: `README.md` se actualizó al activar la spec.
+- D-14: `Settings.genai_provider` es `Literal["fake"]` opcional y la factory revalida
+  el nombre: doble barrera contra un proveedor real.
+- D-15: las decisiones quedan documentadas en la spec activa; no hay plan fuera del
+  repositorio.
+
 ## Evidencia resumida
+
+### 001-foundation
 
 - `ruff check .`: sin hallazgos.
 - `mypy src`: sin errores (strict).
 - `pytest`: 21 tests aprobados.
 - Commit de bootstrap: `chore: bootstrap generative ai service`.
 
+### 002-provider-abstraction
+
+- `ruff check .`: sin hallazgos.
+- `mypy src`: sin errores (strict) en 18 archivos.
+- `pytest`: 148 tests aprobados (102 en `test_providers.py`, 20 en `test_config.py`, 9 en
+  `test_import_boundaries.py`, 8 en `test_provider_factory.py`, 5 en `test_errors.py` y 4
+  en `test_health.py`), con el guard de red activo.
+- Rama `feature/provider-abstraction`: 6 commits, uno por bloque de implementación.
+- Evidencia completa en `specs/002-provider-abstraction/evidence.md`.
+
 ## Deuda y pendientes
 
-- Definir el puerto `GenerativeAiProvider`, DTOs, errores, fake y factory (002, offline).
+- `GENAI_API_KEY=` y `GENAI_MODEL=` vacíos quedan como `SecretStr('')` y `''` en lugar
+  de `None`; se normalizan en 011.
+- `StarletteDeprecationWarning` de `TestClient` con `httpx`; se revisa en 008.
+- El logging estructurado de las llamadas al proveedor (modelo, duración, `error_code`)
+  queda para 007.
 - Evaluar proveedores y construir el adaptador real detrás del puerto (011).
 - Contratos y guardrails de explicación (003) y parseo (004).
 - Auth mínima de servicio en 003; endurecimiento, PII y prompt injection en 005.
@@ -120,7 +168,7 @@ los valida y la factory solo admite `fake`; 011 los consume en el adaptador real
 
 ## Próximo paso
 
-Implementar G02 (`002-provider-abstraction`) sin red, sin adaptador y sin proveedor real:
-puerto, DTOs, taxonomía de errores, guard central, fake, factory y validación de
-`Settings`. Cerrar con `ruff check .`, `mypy src` y `pytest` en verde y evidencia
-registrada.
+G03 = `011-llm-provider`: evaluar proveedores (precio, capa gratuita, latencia, salida
+JSON estructurada, calidad en español e integración en Python) y documentar la
+decisión **antes** de escribir el adaptador real, que irá detrás del mismo puerto
+`GenerativeAiProvider`. La spec se activa en su propia rama.

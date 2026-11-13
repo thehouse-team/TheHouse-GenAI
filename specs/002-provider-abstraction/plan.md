@@ -1,6 +1,6 @@
 # Plan — 002-provider-abstraction Abstracción de proveedor LLM
 
-- **Estado:** ACTIVE
+- **Estado:** IMPLEMENTED
 - **Depende de:** 001-foundation
 
 ## Enfoque técnico
