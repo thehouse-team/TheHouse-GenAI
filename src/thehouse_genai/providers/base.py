@@ -8,9 +8,10 @@ spec 011, behind this same port.
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any, ClassVar, Literal, Protocol, runtime_checkable
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 
 class _ProviderModel(BaseModel):
@@ -164,3 +165,65 @@ class GenerativeAiProvider(Protocol):
         """
 
         ...
+
+
+class GuardedProvider:
+    """Enforce the input limit and the timeout around a provider implementation.
+
+    The guard is the only place that measures the input and that bounds a call in
+    time, so every provider, current or future, inherits the same guarantees. It
+    never logs and never exposes the request content or vendor details.
+    """
+
+    def __init__(
+        self,
+        provider: GenerativeAiProvider,
+        *,
+        timeout_seconds: float,
+        max_input_chars: int,
+    ) -> None:
+        """Bind the delegate and the limits.
+
+        Raises:
+            ValueError: if the timeout is not positive or the input limit is invalid.
+        """
+
+        if timeout_seconds <= 0:
+            raise ValueError("timeout_seconds must be greater than 0")
+        if max_input_chars < 1:
+            raise ValueError("max_input_chars must be at least 1")
+        self._provider = provider
+        self._timeout_seconds = timeout_seconds
+        self._max_input_chars = max_input_chars
+
+    async def generate(self, request: GenerativeAiRequest) -> GenerativeAiResponse:
+        """Validate the input, delegate under a timeout and normalize the outcome.
+
+        Raises:
+            ProviderError: any normalized provider failure.
+        """
+
+        self._validate_input_size(request)
+        try:
+            raw: object = await asyncio.wait_for(
+                self._provider.generate(request),
+                self._timeout_seconds,
+            )
+        except TimeoutError as exc:
+            raise ProviderTimeoutError() from exc
+        except ProviderError:
+            raise
+        except ValidationError as exc:
+            raise ProviderInvalidResponseError() from exc
+        except Exception as exc:
+            raise ProviderUnavailableError() from exc
+        if not isinstance(raw, GenerativeAiResponse):
+            raise ProviderInvalidResponseError()
+        return raw
+
+    def _validate_input_size(self, request: GenerativeAiRequest) -> None:
+        """Reject oversized input before the provider is ever invoked."""
+
+        size = len(request.prompt) + len(request.system_prompt or "")
+        if size > self._max_input_chars:
+            raise ProviderInputTooLargeError()

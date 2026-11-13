@@ -12,6 +12,7 @@ from thehouse_genai.providers.base import (
     GenerativeAiRequest,
     GenerativeAiResponse,
     GenerativeAiUsage,
+    GuardedProvider,
     ProviderAuthError,
     ProviderError,
     ProviderInputTooLargeError,
@@ -21,6 +22,13 @@ from thehouse_genai.providers.base import (
     ProviderUnavailableError,
 )
 from thehouse_genai.providers.fake import FakeProvider
+
+
+class _WrongResponseProvider:
+    """Provider stub that violates the response contract on purpose."""
+
+    async def generate(self, request: GenerativeAiRequest) -> object:
+        return {"text": "not a dto"}
 
 ALL_ERRORS = (
     ProviderError,
@@ -351,3 +359,156 @@ def test_fake_hang_never_answers() -> None:
 
     with pytest.raises(TimeoutError):
         asyncio.run(_call())
+
+
+def test_guard_delegates_and_returns_response() -> None:
+    provider = FakeProvider(text="ok")
+    guard = GuardedProvider(provider, timeout_seconds=1.0, max_input_chars=1_000)
+    request = GenerativeAiRequest(prompt="hello")
+
+    response = asyncio.run(guard.generate(request))
+
+    assert response.text == "ok"
+    assert provider.calls == [request]
+
+
+def test_guard_rejects_oversized_input_without_calling_provider() -> None:
+    provider = FakeProvider()
+    guard = GuardedProvider(provider, timeout_seconds=1.0, max_input_chars=4)
+
+    with pytest.raises(ProviderInputTooLargeError):
+        asyncio.run(guard.generate(GenerativeAiRequest(prompt="hello")))
+
+    assert provider.calls == []
+
+
+def test_guard_accepts_input_at_the_limit() -> None:
+    provider = FakeProvider()
+    guard = GuardedProvider(provider, timeout_seconds=1.0, max_input_chars=5)
+
+    response = asyncio.run(guard.generate(GenerativeAiRequest(prompt="hello")))
+
+    assert response.text == "fake response"
+    assert len(provider.calls) == 1
+
+
+def test_guard_counts_system_prompt_in_the_limit() -> None:
+    provider = FakeProvider()
+    guard = GuardedProvider(provider, timeout_seconds=1.0, max_input_chars=8)
+    request = GenerativeAiRequest(prompt="hello", system_prompt="abcd")
+
+    with pytest.raises(ProviderInputTooLargeError):
+        asyncio.run(guard.generate(request))
+
+    assert provider.calls == []
+
+
+def test_guard_accepts_system_prompt_at_the_limit() -> None:
+    provider = FakeProvider()
+    guard = GuardedProvider(provider, timeout_seconds=1.0, max_input_chars=9)
+    request = GenerativeAiRequest(prompt="hello", system_prompt="abcd")
+
+    asyncio.run(guard.generate(request))
+
+    assert len(provider.calls) == 1
+
+
+def test_guard_converts_injected_timeout_error() -> None:
+    cause = TimeoutError()
+    provider = FakeProvider(error=cause)
+    guard = GuardedProvider(provider, timeout_seconds=1.0, max_input_chars=1_000)
+
+    with pytest.raises(ProviderTimeoutError) as exc_info:
+        asyncio.run(guard.generate(GenerativeAiRequest(prompt="hello")))
+
+    assert exc_info.value.__cause__ is cause
+
+
+def test_guard_converts_real_timeout() -> None:
+    provider = FakeProvider(hang=True)
+    guard = GuardedProvider(provider, timeout_seconds=0.05, max_input_chars=1_000)
+
+    with pytest.raises(ProviderTimeoutError):
+        asyncio.run(guard.generate(GenerativeAiRequest(prompt="hello")))
+
+
+def test_guard_propagates_provider_error_unchanged() -> None:
+    cause = ProviderAuthError()
+    provider = FakeProvider(error=cause)
+    guard = GuardedProvider(provider, timeout_seconds=1.0, max_input_chars=1_000)
+
+    with pytest.raises(ProviderAuthError) as exc_info:
+        asyncio.run(guard.generate(GenerativeAiRequest(prompt="hello")))
+
+    assert exc_info.value is cause
+
+
+def test_guard_normalizes_generic_exception() -> None:
+    cause = RuntimeError("boom")
+    provider = FakeProvider(error=cause)
+    guard = GuardedProvider(provider, timeout_seconds=1.0, max_input_chars=1_000)
+
+    with pytest.raises(ProviderUnavailableError) as exc_info:
+        asyncio.run(guard.generate(GenerativeAiRequest(prompt="hello")))
+
+    assert exc_info.value.__cause__ is cause
+
+
+def test_guard_normalizes_validation_error() -> None:
+    with pytest.raises(ValidationError) as validation:
+        GenerativeAiResponse.model_validate({"text": ""})
+    provider = FakeProvider(error=validation.value)
+    guard = GuardedProvider(provider, timeout_seconds=1.0, max_input_chars=1_000)
+
+    with pytest.raises(ProviderInvalidResponseError) as exc_info:
+        asyncio.run(guard.generate(GenerativeAiRequest(prompt="hello")))
+
+    assert exc_info.value.__cause__ is validation.value
+
+
+def test_guard_rejects_wrong_response_type() -> None:
+    guard = GuardedProvider(
+        _WrongResponseProvider(), timeout_seconds=1.0, max_input_chars=1_000
+    )
+
+    with pytest.raises(ProviderInvalidResponseError):
+        asyncio.run(guard.generate(GenerativeAiRequest(prompt="hello")))
+
+
+def test_guard_does_not_capture_cancellation() -> None:
+    provider = FakeProvider(error=asyncio.CancelledError())
+    guard = GuardedProvider(provider, timeout_seconds=1.0, max_input_chars=1_000)
+
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(guard.generate(GenerativeAiRequest(prompt="hello")))
+
+
+def test_guard_error_does_not_leak_prompt_or_vendor_detail() -> None:
+    provider = FakeProvider(error=RuntimeError("vendor secret"))
+    guard = GuardedProvider(provider, timeout_seconds=1.0, max_input_chars=1_000)
+
+    with pytest.raises(ProviderUnavailableError) as exc_info:
+        asyncio.run(guard.generate(GenerativeAiRequest(prompt="mi prompt secreto")))
+
+    message = str(exc_info.value)
+    assert message
+    assert "mi prompt secreto" not in message
+    assert "vendor secret" not in message
+
+
+def test_guarded_provider_satisfies_protocol() -> None:
+    guard = GuardedProvider(FakeProvider(), timeout_seconds=1.0, max_input_chars=1_000)
+
+    assert isinstance(guard, GenerativeAiProvider)
+
+
+@pytest.mark.parametrize("timeout_seconds", [0.0, -1.0])
+def test_guard_rejects_invalid_timeout(timeout_seconds: float) -> None:
+    with pytest.raises(ValueError, match="timeout_seconds"):
+        GuardedProvider(FakeProvider(), timeout_seconds=timeout_seconds, max_input_chars=1_000)
+
+
+@pytest.mark.parametrize("max_input_chars", [0, -1])
+def test_guard_rejects_invalid_input_limit(max_input_chars: int) -> None:
+    with pytest.raises(ValueError, match="max_input_chars"):
+        GuardedProvider(FakeProvider(), timeout_seconds=1.0, max_input_chars=max_input_chars)
