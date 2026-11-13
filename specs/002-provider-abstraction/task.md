@@ -1,8 +1,9 @@
 # Tareas — 002-provider-abstraction Abstracción de proveedor LLM
 
-- **Estado:** PLANNED
+- **Estado:** ACTIVE
 
-> No iniciar hasta que la spec sea la activa y su plan esté aprobado.
+> Condición cumplida el 2026-11-13: la spec está `ACTIVE` y su plan está aprobado.
+> Las decisiones de diseño (D-1 a D-15) están en `spec.md`.
 
 ## Diseño
 

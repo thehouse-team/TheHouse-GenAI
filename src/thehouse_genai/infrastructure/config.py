@@ -17,7 +17,11 @@ from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 class Settings(BaseSettings):
     """Application settings.
 
-    Provider fields are reserved for spec 002. G01 never calls an LLM provider.
+    The provider block (`genai_provider`, `genai_api_key`, `genai_model`,
+    `genai_timeout_seconds`, `genai_max_input_chars`) is validated since spec 002.
+    In G02 only the `fake` provider is accepted and no external call is ever made; the
+    real provider and its credential are consumed by spec 011 behind the same port.
+    Never log `genai_api_key`.
     """
 
     model_config = SettingsConfigDict(

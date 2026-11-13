@@ -1,6 +1,6 @@
 # Checklist — 002-provider-abstraction Abstracción de proveedor LLM
 
-- **Estado:** PLANNED
+- **Estado:** ACTIVE
 
 ## Criterios de aceptación
 

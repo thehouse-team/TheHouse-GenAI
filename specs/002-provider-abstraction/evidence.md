@@ -1,8 +1,8 @@
 # Evidencia — 002-provider-abstraction Abstracción de proveedor LLM
 
-- **Estado:** PLANNED
-- **Fecha:** —
-- **Implementación:** no iniciada
+- **Estado:** ACTIVE
+- **Fecha:** 2026-11-13
+- **Implementación:** en curso
 
 ## Resultado
 

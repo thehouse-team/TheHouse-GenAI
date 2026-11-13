@@ -1,6 +1,6 @@
 # Memoria del proyecto — TheHouse GenAI
 
-Última actualización: 2026-11-12
+Última actualización: 2026-11-13
 
 ## Identidad
 
@@ -13,7 +13,7 @@ Smart Match, no consulta propiedades y no contiene Mobile.
 | Spec | Estado | Alcance |
 | --- | --- | --- |
 | 001-foundation | IMPLEMENTED | Servicio mínimo, health, config, seguridad base, tests, CI |
-| 002-provider-abstraction | PLANNED | Puerto `GenerativeAiProvider`, DTOs, errores, fake y factory (offline) |
+| 002-provider-abstraction | ACTIVE | Puerto `GenerativeAiProvider`, DTOs, errores, fake y factory (offline) |
 | 003-smart-match-explanation | PLANNED | Explicación de match sin alterar hechos, con auth mínima de servicio |
 | 004-natural-language-search | PLANNED | Parseo de búsqueda a filtros, nunca propiedades |
 | 005-security | PLANNED | Autenticación de servicio endurecida, PII, prompt injection |
@@ -29,7 +29,7 @@ Smart Match, no consulta propiedades y no contiene Mobile.
 | Fase | Spec | Contenido |
 | --- | --- | --- |
 | G01 | 001-foundation | Servicio base, health, configuración, CI (IMPLEMENTED) |
-| G02 | 002-provider-abstraction | Puerto LLM, DTOs, errores, fake y factory, 100% offline |
+| G02 | 002-provider-abstraction | Puerto LLM, DTOs, errores, fake y factory, 100% offline (ACTIVE) |
 | G03 | 011-llm-provider | Evaluación de proveedores y adaptador real |
 | G04 | 003-smart-match-explanation | Endpoint explain-match con auth mínima de servicio |
 | G05 | 005-security | Endurecimiento de seguridad, PII, prompt injection |
@@ -45,9 +45,10 @@ cobertura) se acumulan en cada fase y la spec se cierra en G09, junto con
 
 ## Spec activa
 
-Ninguna. La spec `ACTIVE` se declara en la tabla de estado y en el encabezado de su
-`spec.md`. Solo una spec puede estar `ACTIVE` a la vez. `002-provider-abstraction` sigue
-`PLANNED` hasta que su plan esté aprobado y se marque `ACTIVE`.
+`002-provider-abstraction` (G02). Es la única spec `ACTIVE`; `001-foundation` queda
+`IMPLEMENTED` y el resto sigue `PLANNED`. La spec activa se declara en la tabla de estado
+y en el encabezado de sus cinco archivos de `specs/002-provider-abstraction/`. Sus
+decisiones de diseño aprobadas (D-1 a D-15) están en `specs/002-provider-abstraction/spec.md`.
 
 ## Enmiendas de la constitución
 
@@ -119,5 +120,7 @@ los valida y la factory solo admite `fake`; 011 los consume en el adaptador real
 
 ## Próximo paso
 
-Aprobar la enmienda 1.1 y el plan de `002-provider-abstraction`; marcarla `ACTIVE` e
-implementar G02 sin red, sin adaptador y sin proveedor real.
+Implementar G02 (`002-provider-abstraction`) sin red, sin adaptador y sin proveedor real:
+puerto, DTOs, taxonomía de errores, guard central, fake, factory y validación de
+`Settings`. Cerrar con `ruff check .`, `mypy src` y `pytest` en verde y evidencia
+registrada.
