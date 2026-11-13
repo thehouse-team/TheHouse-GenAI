@@ -84,3 +84,34 @@ def test_api_key_is_not_exposed_in_repr() -> None:
     assert "super-secret-value" not in repr(settings)
     assert settings.genai_api_key is not None
     assert settings.genai_api_key.get_secret_value() == "super-secret-value"
+
+
+def test_genai_provider_defaults_to_none() -> None:
+    settings = Settings(_env_file=None)
+
+    assert settings.genai_provider is None
+
+
+def test_genai_provider_accepts_fake() -> None:
+    settings = Settings(_env_file=None, genai_provider="fake")
+
+    assert settings.genai_provider == "fake"
+
+
+def test_genai_provider_empty_string_is_none() -> None:
+    settings = Settings(_env_file=None, genai_provider="")
+
+    assert settings.genai_provider is None
+
+
+@pytest.mark.parametrize("value", ["FAKE", " fake ", "fake "])
+def test_genai_provider_is_normalized(value: str) -> None:
+    settings = Settings(_env_file=None, genai_provider=value)
+
+    assert settings.genai_provider == "fake"
+
+
+@pytest.mark.parametrize("value", ["gemini", "openai"])
+def test_genai_provider_rejects_unsupported_value(value: str) -> None:
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, genai_provider=value)

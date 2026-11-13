@@ -37,12 +37,28 @@ class Settings(BaseSettings):
     cors_origins: Annotated[list[str], NoDecode] = Field(default_factory=list)
     max_request_bytes: int = Field(default=65_536, ge=1_024, le=10_485_760)
 
-    # Future spec 002 configuration. Never log `genai_api_key`.
-    genai_provider: str | None = None
+    # Provider configuration (spec 002). Only "fake" exists in G02 and it never calls
+    # out; the real provider arrives in spec 011 behind the same port.
+    # Never log `genai_api_key`.
+    genai_provider: Literal["fake"] | None = None
     genai_api_key: SecretStr | None = None
     genai_model: str | None = None
     genai_timeout_seconds: float = Field(default=15.0, gt=0, le=120)
     genai_max_input_chars: int = Field(default=4_000, ge=1, le=100_000)
+
+    @field_validator("genai_provider", mode="before")
+    @classmethod
+    def _normalize_genai_provider(cls, value: Any) -> str | None:
+        """Normalize the provider name and treat an empty value as unset."""
+
+        if value is None:
+            return None
+        if not isinstance(value, str):
+            raise ValueError("GENAI_PROVIDER must be a string")
+        candidate = value.strip().lower()
+        if not candidate:
+            return None
+        return candidate
 
     @field_validator("cors_origins", mode="before")
     @classmethod
