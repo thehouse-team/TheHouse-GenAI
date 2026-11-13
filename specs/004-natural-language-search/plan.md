@@ -1,7 +1,7 @@
 # Plan — 004-natural-language-search Búsqueda en lenguaje natural
 
 - **Estado:** PLANNED
-- **Depende de:** 001-foundation, 002-provider-abstraction
+- **Depende de:** 001-foundation, 002-provider-abstraction, 011-llm-provider
 
 ## Enfoque técnico
 

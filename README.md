@@ -6,8 +6,10 @@ estructurados. No calcula Smart Match, no consulta propiedades y no sustituye al
 
 ## Estado
 
-G01 Foundation implementado. Contratos de IA (`explain-match`, `parse-search`) y proveedor
-LLM real están planificados en `specs/` y todavía no se implementan.
+G01 Foundation implementado. El roadmap por fases (G01–G10) y el estado de cada spec
+están en `memoria.md`. Ninguna spec nueva está `ACTIVE`: el proveedor LLM real y los
+contratos de IA (`explain-match`, `parse-search`) siguen planificados en `specs/` y
+todavía no se implementan.
 
 ## Ejecución local
 
@@ -38,4 +40,4 @@ pytest
 - `constitution.md`: principios no negociables.
 - `AGENTS.md`: reglas de trabajo para agentes.
 - `memoria.md`: estado y decisiones acumuladas.
-- `specs/001-foundation` a `specs/010-integration-thehouse`: SDD por incremento.
+- `specs/001-foundation` a `specs/011-llm-provider`: SDD por incremento.

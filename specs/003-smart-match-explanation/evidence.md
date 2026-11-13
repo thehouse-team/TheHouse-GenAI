@@ -18,6 +18,9 @@ reportar. No se debe marcar como completada hasta cumplir sus criterios.
 - [ ] Score faltante o fuera de rango devuelve 422.
 - [ ] Pruebas con fake provider, sin red.
 - [ ] No existe acceso a base de datos ni a propiedades.
+- [ ] Endpoint sin `X-Service-Key` devuelve 401 con el sobre estándar.
+- [ ] `X-Service-Key` incorrecto devuelve 401 sin revelar si la credencial existe.
+- [ ] La credencial no aparece en logs ni en el `repr` de `Settings`.
 - [ ] Resultados de `ruff check .`, `mypy src` y `pytest`.
 - [ ] Revisión de seguridad y confirmación de ausencia de secretos/PII.
 - [ ] Referencia al commit que implementa la spec.

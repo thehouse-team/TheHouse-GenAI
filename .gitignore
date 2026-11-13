@@ -21,6 +21,7 @@ htmlcov/
 # Tooling and editors
 .idea/
 .vscode/
+.vs/
 *.swp
 
 # OS

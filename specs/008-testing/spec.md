@@ -58,5 +58,5 @@ G01 cuenta con 21 pruebas de health, configuración, errores y límites. Las spe
 
 ## Fuera de esta spec
 
-No se implementa nada de este documento en G01. La spec permanece PLANNED hasta que
-el Backend, la seguridad y los contratos estén aprobados y sea su turno.
+Esta spec permanece `PLANNED` hasta que sea su turno. No se activa hasta que su plan
+esté aprobado.

@@ -58,5 +58,5 @@ G01 ya incluye CI con checkout, Python 3.12, instalación, ruff, mypy y pytest. 
 
 ## Fuera de esta spec
 
-No se implementa nada de este documento en G01. La spec permanece PLANNED hasta que
-el Backend, la seguridad y los contratos estén aprobados y sea su turno.
+Esta spec permanece `PLANNED` hasta que sea su turno. No se activa hasta que su plan
+esté aprobado.

@@ -8,8 +8,10 @@ otros repositorios de TheHouse; este contexto es el contrato de integración ini
 
 ## Límites duros
 
-- Implementar únicamente la spec activa. En G01 solo `001-foundation` está habilitada.
-- No implementar endpoints futuros (`explain-match`, `parse-search`) ni proveedores LLM.
+- Implementar únicamente la spec activa. La spec activa es la marcada como `ACTIVE` en
+  `memoria.md`.
+- No implementar endpoints futuros (`explain-match`, `parse-search`) ni proveedores LLM
+  reales; el adaptador real solo existe desde `011-llm-provider`.
 - No calcular Smart Match, consultar propiedades ni duplicar lógica del Backend.
 - No incluir Mobile, autenticación de usuarios ni secretos reales.
 - No añadir Docker, bases de datos ni servicios externos sin una spec aprobada.
@@ -19,11 +21,15 @@ otros repositorios de TheHouse; este contexto es el contrato de integración ini
 ## Flujo SDD
 
 1. Confirmar que la spec es la activa y que su plan está aprobado.
-2. Implementar solo las tareas de `task.md`.
-3. Ejecutar `ruff check .`, `mypy src` y `pytest`.
-4. Actualizar `checklist.md` y `evidence.md` con resultados reales.
-5. Si la spec se completa, cambiar su estado a `IMPLEMENTED`; el resto sigue `PLANNED`.
-6. Registrar decisiones y deuda en `memoria.md`.
+2. Trabajar en una rama dedicada: `feature/<spec>` para specs y `chore/<tema>` para
+   gobernanza, documentación o tooling. Nunca se commitea directamente en `main`.
+3. Implementar solo las tareas de `task.md`.
+4. Ejecutar `ruff check .`, `mypy src` y `pytest`.
+5. Actualizar `checklist.md` y `evidence.md` con resultados reales.
+6. Abrir un pull request hacia `main` usando el checklist SDD de
+   `.github/pull_request_template.md`. Todo merge se hace por PR y con squash.
+7. Si la spec se completa, cambiar su estado a `IMPLEMENTED`; el resto sigue `PLANNED`.
+8. Registrar decisiones y deuda en `memoria.md`.
 
 ## Comandos
 
@@ -44,9 +50,10 @@ src/thehouse_genai/
   api/            HTTP, middleware, errores, health
   application/    casos de uso (futuro)
   domain/         contratos e invariantes (futuro)
-  providers/      interfaz LLM y adaptadores (futuro, spec 002)
+  providers/      puerto LLM, DTOs y fake (spec 002); adaptador real (spec 011)
   infrastructure/ configuración, logging
 tests/            unitarias e integración con TestClient
+scripts/          utilidades manuales, fuera de CI (spec 011)
 specs/            SDD por incremento
 ```
 
