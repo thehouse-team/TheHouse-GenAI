@@ -8,7 +8,7 @@ spec 011, behind this same port.
 
 from __future__ import annotations
 
-from typing import Any, ClassVar, Literal
+from typing import Any, ClassVar, Literal, Protocol, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -145,3 +145,22 @@ class ProviderInputTooLargeError(ProviderError):
     code = "PROVIDER_INPUT_TOO_LARGE"
     retryable = False
     message = "The input exceeds the configured maximum size and was not sent."
+
+
+@runtime_checkable
+class GenerativeAiProvider(Protocol):
+    """Vendor-neutral LLM port.
+
+    Implementations never expose SDK types, HTTP payloads or vendor errors to
+    callers: every failure is reported as a `ProviderError`. The timeout is not part
+    of this signature; the port guard applies it to every call.
+    """
+
+    async def generate(self, request: GenerativeAiRequest) -> GenerativeAiResponse:
+        """Produce a completion for the given request.
+
+        Raises:
+            ProviderError: any normalized provider failure.
+        """
+
+        ...

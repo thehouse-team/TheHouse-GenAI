@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 from pydantic import ValidationError
 
 from thehouse_genai.providers.base import (
+    GenerativeAiProvider,
     GenerativeAiRequest,
     GenerativeAiResponse,
     GenerativeAiUsage,
@@ -17,6 +20,7 @@ from thehouse_genai.providers.base import (
     ProviderTimeoutError,
     ProviderUnavailableError,
 )
+from thehouse_genai.providers.fake import FakeProvider
 
 ALL_ERRORS = (
     ProviderError,
@@ -250,3 +254,100 @@ def test_error_never_exposes_detail(error_type: type[ProviderError]) -> None:
     assert "vendor" not in str(error)
     assert "secret" not in repr(error)
     assert error.args == (error_type.message,)
+
+
+def test_fake_provider_satisfies_protocol() -> None:
+    assert isinstance(FakeProvider(), GenerativeAiProvider)
+
+
+def test_fake_returns_programmed_response() -> None:
+    provider = FakeProvider(text="programmed")
+
+    response = asyncio.run(provider.generate(GenerativeAiRequest(prompt="hello")))
+
+    assert isinstance(response, GenerativeAiResponse)
+    assert response.text == "programmed"
+
+
+def test_fake_is_deterministic_across_calls() -> None:
+    provider = FakeProvider(text="programmed")
+    request = GenerativeAiRequest(prompt="hello")
+
+    first = asyncio.run(provider.generate(request))
+    second = asyncio.run(provider.generate(request))
+
+    assert first.model_dump() == second.model_dump()
+
+
+def test_fake_raises_programmed_taxonomy_error() -> None:
+    provider = FakeProvider(error=ProviderAuthError())
+
+    with pytest.raises(ProviderAuthError):
+        asyncio.run(provider.generate(GenerativeAiRequest(prompt="hello")))
+
+
+def test_fake_raises_programmed_generic_error() -> None:
+    provider = FakeProvider(error=RuntimeError("boom"))
+
+    with pytest.raises(RuntimeError, match="boom"):
+        asyncio.run(provider.generate(GenerativeAiRequest(prompt="hello")))
+
+
+def test_fake_records_calls() -> None:
+    provider = FakeProvider()
+    first = GenerativeAiRequest(prompt="first")
+    second = GenerativeAiRequest(prompt="second")
+
+    asyncio.run(provider.generate(first))
+    asyncio.run(provider.generate(second))
+
+    assert provider.calls == [first, second]
+
+
+def test_fake_calls_returns_a_copy() -> None:
+    provider = FakeProvider()
+    asyncio.run(provider.generate(GenerativeAiRequest(prompt="hello")))
+
+    provider.calls.clear()
+
+    assert len(provider.calls) == 1
+
+
+def test_fake_derives_usage_from_lengths() -> None:
+    provider = FakeProvider(text="ok")
+    request = GenerativeAiRequest(prompt="hello")
+
+    response = asyncio.run(provider.generate(request))
+
+    assert response.usage.input_tokens == 2
+    assert response.usage.output_tokens == 1
+    assert response.usage.total_tokens == 3
+
+
+def test_fake_derives_usage_including_system_prompt() -> None:
+    provider = FakeProvider(text="ok")
+    request = GenerativeAiRequest(prompt="hello", system_prompt="abcd")
+
+    response = asyncio.run(provider.generate(request))
+
+    assert response.usage.input_tokens == 3
+
+
+def test_fake_uses_explicit_usage() -> None:
+    usage = GenerativeAiUsage(input_tokens=10, output_tokens=5)
+    provider = FakeProvider(text="ok", usage=usage)
+
+    response = asyncio.run(provider.generate(GenerativeAiRequest(prompt="hello")))
+
+    assert response.usage == usage
+
+
+def test_fake_hang_never_answers() -> None:
+    provider = FakeProvider(hang=True)
+    request = GenerativeAiRequest(prompt="hello")
+
+    async def _call() -> GenerativeAiResponse:
+        return await asyncio.wait_for(provider.generate(request), 0.05)
+
+    with pytest.raises(TimeoutError):
+        asyncio.run(_call())
