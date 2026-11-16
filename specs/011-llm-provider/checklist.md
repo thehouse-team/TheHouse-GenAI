@@ -1,13 +1,16 @@
 # Checklist — 011-llm-provider Proveedor LLM real
 
-- **Estado:** PLANNED
+- **Estado:** ACTIVE
+- **Fecha de activación:** 2026-11-15
 
 ## Evaluación y decisión
 
-- [ ] Matriz con precio, capa gratuita, latencia, JSON estructurado, español y Python.
-- [ ] Fuentes citadas por dato.
-- [ ] Documento de decisión con proveedor elegido, alternativa y motivo.
-- [ ] Condiciones de revisión del documento de decisión.
+- [x] Matriz con precio, capa gratuita, latencia, JSON estructurado, español y Python.
+      La latencia y la calidad en español quedan marcadas «pendiente de medir» hasta
+      el bloque B8.
+- [x] Fuentes citadas por dato.
+- [x] Documento de decisión con proveedor elegido, alternativa y motivo.
+- [x] Condiciones de revisión del documento de decisión.
 
 ## Criterios de aceptación
 
@@ -30,9 +33,9 @@
 
 ## SDD y calidad
 
-- [ ] `spec.md`, `plan.md`, `task.md`, `checklist.md` y `evidence.md` actualizados.
+- [x] `spec.md`, `plan.md`, `task.md`, `checklist.md` y `evidence.md` actualizados.
 - [ ] `ruff check .` sin hallazgos.
 - [ ] `mypy src` sin errores.
 - [ ] `pytest` en verde y sin red.
-- [ ] `memoria.md` actualizado con la decisión de proveedor.
+- [x] `memoria.md` actualizado con la decisión de proveedor.
 - [ ] Evidencia registrada antes de marcar IMPLEMENTED.

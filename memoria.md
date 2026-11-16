@@ -1,6 +1,6 @@
 # Memoria del proyecto — TheHouse GenAI
 
-Última actualización: 2026-11-13
+Última actualización: 2026-11-15
 
 ## Identidad
 
@@ -22,7 +22,7 @@ Smart Match, no consulta propiedades y no contiene Mobile.
 | 008-testing | PLANNED | Estrategia completa y contract tests (transversal, cierra en G09) |
 | 009-ci-cd | PLANNED | Pipeline completo y despliegue futuro |
 | 010-integration-thehouse | PLANNED | Contratos y operación con Backend |
-| 011-llm-provider | PLANNED | Evaluación de proveedores y adaptador real detrás del puerto |
+| 011-llm-provider | ACTIVE | Evaluación de proveedores y adaptador real detrás del puerto |
 
 ## Mapeo de fases
 
@@ -45,11 +45,16 @@ cobertura) se acumulan en cada fase y la spec se cierra en G09, junto con
 
 ## Spec activa
 
-Ninguna. `002-provider-abstraction` pasó a `IMPLEMENTED` el 2026-11-13 con sus
-criterios verificados y la evidencia registrada en
-`specs/002-provider-abstraction/evidence.md`. La siguiente spec en orden es
-`011-llm-provider` (G03), que se activa en su propia rama cuando se apruebe su plan.
-Solo una spec puede estar `ACTIVE` a la vez.
+`011-llm-provider` (G03) está `ACTIVE` desde 2026-11-15 en la rama
+`feature/llm-provider`. Su plan está aprobado y la decisión de proveedor quedó
+documentada en `specs/011-llm-provider/decision.md`, con la matriz comparativa en
+`specs/011-llm-provider/evaluation.md`. `002-provider-abstraction` permanece
+`IMPLEMENTED` y el resto de specs, `PLANNED`. Solo una spec puede estar `ACTIVE` a
+la vez.
+
+La spec no se cierra como `IMPLEMENTED` hasta que el smoke test manual se haya
+ejecutado con una credencial real y su resultado quede registrado en
+`specs/011-llm-provider/evidence.md`.
 
 ## Enmiendas de la constitución
 
@@ -134,6 +139,44 @@ los valida y la factory solo admite `fake`; 011 los consume en el adaptador real
 - D-15: las decisiones quedan documentadas en la spec activa; no hay plan fuera del
   repositorio.
 
+## Decisiones tomadas en 011
+
+Proveedor elegido: **Gemini API (Google AI Studio)**, familia Flash, por REST con
+`httpx` y sin SDK nuevo. El id del modelo se fija con `GENAI_MODEL` y no se
+hardcodea en el código. La matriz comparativa y las fuentes están en
+`specs/011-llm-provider/evaluation.md`; el documento de decisión completo, en
+`specs/011-llm-provider/decision.md`.
+
+- D-1: el `400` del vendor se mapea a `ProviderInvalidResponseError`; no se crean
+  clases nuevas en `providers/base.py` ni se modifica la taxonomía de 002.
+- D-2: el `404` (modelo inexistente) se mapea también a `ProviderInvalidResponseError`,
+  por ser un fallo no reintentable de configuración.
+- D-3: el timeout de `httpx` es igual a `GENAI_TIMEOUT_SECONDS`, además del timeout
+  total que aplica `GuardedProvider`; ambos caminos terminan en
+  `ProviderTimeoutError`.
+- D-4: la allowlist del logging JSON amplía con `provider`, `provider_model`,
+  `error_code`, `duration_ms`, `prompt_chars` y `completion_chars`. Nunca se
+  registra contenido: ni prompts, ni respuestas, ni cabeceras.
+- D-5: el adaptador vive en `src/thehouse_genai/providers/gemini.py`.
+- D-6: el cliente `httpx` se crea por llamada; no hay cliente compartido ni ciclo de
+  vida que cerrar.
+- D-7: `temperature` se envía siempre, aunque algunas familias de Gemini lo ignoren;
+  el smoke test registra las cabeceras de deprecación que devuelva el vendor.
+- D-8: el smoke test de 011 (bloque B8) se ejecuta en la capa gratuita con prompts
+  sintéticos. El proyecto de pago con tope de gasto se crea antes de la demo con
+  datos reales, en la fase G09.
+- D-9: no hay modelo por defecto en el repositorio; `GENAI_MODEL` vacío significa
+  "no configurado" y es un error si el proveedor es `gemini`.
+- D-10: `GENAI_TIMEOUT_SECONDS` mantiene el valor por defecto de 15 s.
+- D-11: el adaptador no valida que el JSON devuelto parsea; el puerto devuelve texto y
+  el esquema de negocio lo validan 003 y 004.
+- D-12: la spec no se cierra como `IMPLEMENTED` sin un smoke test real ejecutado y
+  registrado en `evidence.md`.
+- D-13: la factory incorpora `ProviderConfigurationError`, subclase de `ValueError`
+  ajena a la taxonomía, para credencial o modelo ausentes con proveedor `gemini`.
+- D-14: `GENAI_PROVIDER` sin definir sigue lanzando `UnsupportedProviderError`; no
+  hay proveedor por defecto.
+
 ## Evidencia resumida
 
 ### 001-foundation
@@ -156,11 +199,14 @@ los valida y la factory solo admite `fake`; 011 los consume en el adaptador real
 ## Deuda y pendientes
 
 - `GENAI_API_KEY=` y `GENAI_MODEL=` vacíos quedan como `SecretStr('')` y `''` en lugar
-  de `None`; se normalizan en 011.
+  de `None`; se normalizan en 011, bloque B2.
 - `StarletteDeprecationWarning` de `TestClient` con `httpx`; se revisa en 008.
 - El logging estructurado de las llamadas al proveedor (modelo, duración, `error_code`)
-  queda para 007.
-- Evaluar proveedores y construir el adaptador real detrás del puerto (011).
+  se inicia en 011 con la allowlist ampliada (D-4) y se completa en 007.
+- Construir el adaptador real detrás del puerto (011, en curso): evaluación y decisión
+  cerradas en el bloque B1.
+- El smoke test manual (`scripts/smoke_provider.py`) aún no se ha escrito ni ejecutado:
+  su ejecución con credencial real es requisito para cerrar 011 (D-12).
 - Contratos y guardrails de explicación (003) y parseo (004).
 - Auth mínima de servicio en 003; endurecimiento, PII y prompt injection en 005.
 - Moderación, observabilidad avanzada, contract tests e integración (006–010).
@@ -168,7 +214,8 @@ los valida y la factory solo admite `fake`; 011 los consume en el adaptador real
 
 ## Próximo paso
 
-G03 = `011-llm-provider`: evaluar proveedores (precio, capa gratuita, latencia, salida
-JSON estructurada, calidad en español e integración en Python) y documentar la
-decisión **antes** de escribir el adaptador real, que irá detrás del mismo puerto
-`GenerativeAiProvider`. La spec se activa en su propia rama.
+G03 = `011-llm-provider`, en curso: la evaluación y la decisión de proveedor están
+cerradas (bloque B1). Continúa el adaptador `GeminiProvider` detrás del puerto
+`GenerativeAiProvider`, la configuración validada, el registro en la factory, el test
+de fronteras y el script de smoke test manual, por bloques y dejando el repositorio
+verde. `003-smart-match-explanation` permanece `PLANNED` hasta el cierre de 011.

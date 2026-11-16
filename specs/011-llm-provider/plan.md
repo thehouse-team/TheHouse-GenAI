@@ -1,7 +1,8 @@
 # Plan — 011-llm-provider Proveedor LLM real
 
-- **Estado:** PLANNED
+- **Estado:** ACTIVE
 - **Depende de:** 002-provider-abstraction
+- **Fecha de activación:** 2026-11-15
 
 ## Enfoque técnico
 
@@ -32,11 +33,38 @@
 
 - `specs/011-llm-provider/evaluation.md`
 - `specs/011-llm-provider/decision.md`
-- `src/thehouse_genai/providers/<vendor>_provider.py`
+- `src/thehouse_genai/providers/gemini.py`
 - `src/thehouse_genai/providers/factory.py`
 - `src/thehouse_genai/infrastructure/config.py`
+- `src/thehouse_genai/infrastructure/logging.py`
 - `scripts/smoke_provider.py`
 - `tests/test_provider_adapter.py`
+- `tests/test_smoke_script.py`
+
+> Enmienda del 2026-11-15, con la spec activa: el archivo del adaptador se fija en
+> `providers/gemini.py`, en coherencia con `providers/fake.py` y
+> `providers/factory.py`, en lugar del marcador `<vendor>_provider.py`. Se añaden
+> `infrastructure/logging.py`, porque la allowlist del logging JSON debe admitir
+> `provider`, `provider_model`, `error_code`, `duration_ms`, `prompt_chars` y
+> `completion_chars` para registrar el modelo interno sin registrar contenido, y
+> `tests/test_smoke_script.py`, que verifica que el script manual nunca lo ejecuta
+> CI.
+
+## Bloques de ejecución
+
+Cada bloque deja el repositorio verde y se cierra con un commit.
+
+| # | Bloque | Contenido | Gates |
+| --- | --- | --- | --- |
+| B1 | Activación, evaluación y decisión | Cabeceras de la spec, `memoria.md`, `evaluation.md`, `decision.md`, `README.md` | `ruff`, `mypy`, `pytest`, `git diff --check` |
+| B2 | Configuración validada | `infrastructure/config.py`, `tests/test_config.py`, `.env.example` | `ruff`, `mypy`, `pytest` |
+| B3 | Adaptador: request y respuesta | `providers/gemini.py`, `tests/test_provider_adapter.py` | `ruff`, `mypy`, `pytest` |
+| B4 | Adaptador: errores, timeout y logging | `providers/gemini.py`, `infrastructure/logging.py`, `tests/test_provider_adapter.py` | `ruff`, `mypy`, `pytest` |
+| B5 | Factory | `providers/factory.py`, `tests/test_provider_factory.py` | `ruff`, `mypy`, `pytest` |
+| B6 | Frontera de imports | `tests/test_import_boundaries.py` | `ruff`, `mypy`, `pytest` |
+| B7 | Smoke test manual | `scripts/smoke_provider.py`, `tests/test_smoke_script.py` | `ruff`, `mypy`, `pytest` y `mypy --strict scripts/smoke_provider.py` |
+| B8 | Ejecución del smoke test | `evidence.md`, `evaluation.md` | `ruff`, `mypy`, `pytest` |
+| B9 | Cierre | `checklist.md`, `evidence.md`, `memoria.md`, `README.md` | `ruff`, `mypy`, `pytest` |
 
 ## Estrategia de pruebas
 

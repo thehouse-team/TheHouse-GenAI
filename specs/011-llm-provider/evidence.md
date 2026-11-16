@@ -1,13 +1,20 @@
 # Evidencia — 011-llm-provider Proveedor LLM real
 
-- **Estado:** PLANNED
-- **Fecha:** —
-- **Implementación:** no iniciada
+- **Estado:** ACTIVE
+- **Fecha:** 2026-11-15
+- **Implementación:** no iniciada (spec activada; bloque B1 en curso)
 
 ## Resultado
 
-Spec planificada. No existe implementación, ejecución de pruebas ni evidencia que
-reportar. No se debe marcar como completada hasta cumplir sus criterios.
+Spec activada el 2026-11-15 con el plan aprobado. El bloque B1 (activación,
+evaluación y decisión) está cerrado: existen `evaluation.md` con la matriz de los
+seis criterios y sus fuentes, y `decision.md` con el proveedor elegido, las
+alternativas descartadas, las decisiones de integración D-1 a D-14 y las condiciones
+de revisión.
+
+No existe todavía implementación, adaptador ni script de smoke test, y por tanto no
+hay evidencia de ejecución que reportar. La spec no se marca como completada hasta
+cumplir sus criterios.
 
 ## Evidencia requerida al cerrar
 
