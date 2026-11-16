@@ -7,6 +7,8 @@ socket and never calls the vendor.
 from __future__ import annotations
 
 import asyncio
+import json
+import logging
 from collections.abc import Callable
 from typing import Any
 
@@ -14,10 +16,16 @@ import httpx
 import pytest
 from pydantic import SecretStr
 
+from thehouse_genai.infrastructure.logging import JsonFormatter
 from thehouse_genai.providers.base import (
     GenerativeAiProvider,
     GenerativeAiRequest,
+    ProviderAuthError,
+    ProviderError,
     ProviderInvalidResponseError,
+    ProviderRateLimitError,
+    ProviderTimeoutError,
+    ProviderUnavailableError,
 )
 from thehouse_genai.providers.gemini import GeminiProvider
 
@@ -89,6 +97,15 @@ def _generate(
     """Run one generation through the provider."""
 
     return asyncio.run(provider.generate(request))
+
+
+def _logged_text(caplog: pytest.LogCaptureFixture) -> str:
+    """Render every captured record, including its structured fields."""
+
+    return "\n".join(
+        " ".join(str(value) for value in record.__dict__.values())
+        for record in caplog.records
+    )
 
 
 def test_provider_satisfies_the_port_protocol() -> None:
@@ -404,3 +421,180 @@ def test_repr_does_not_expose_the_credential() -> None:
 
     assert API_KEY not in repr(provider)
     assert MODEL in repr(provider)
+
+
+@pytest.mark.parametrize(
+    ("status_code", "error_type"),
+    [
+        (400, ProviderInvalidResponseError),
+        (404, ProviderInvalidResponseError),
+        (418, ProviderInvalidResponseError),
+        (401, ProviderAuthError),
+        (403, ProviderAuthError),
+        (408, ProviderTimeoutError),
+        (429, ProviderRateLimitError),
+        (500, ProviderUnavailableError),
+        (502, ProviderUnavailableError),
+        (503, ProviderUnavailableError),
+    ],
+)
+def test_http_status_is_mapped_to_the_taxonomy(
+    status_code: int,
+    error_type: type[ProviderError],
+) -> None:
+    provider = _provider(_handler({"error": {"message": "vendor-detail"}}, status_code=status_code))
+
+    with pytest.raises(error_type):
+        _generate(provider, GenerativeAiRequest(prompt="hola"))
+
+
+def test_timeout_is_mapped_to_the_timeout_error() -> None:
+    def _respond(request: httpx.Request) -> httpx.Response:
+        raise httpx.ReadTimeout("vendor timeout")
+
+    provider = _provider(_respond)
+
+    with pytest.raises(ProviderTimeoutError):
+        _generate(provider, GenerativeAiRequest(prompt="hola"))
+
+
+def test_network_error_is_mapped_to_unavailable() -> None:
+    def _respond(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("connection refused")
+
+    provider = _provider(_respond)
+
+    with pytest.raises(ProviderUnavailableError):
+        _generate(provider, GenerativeAiRequest(prompt="hola"))
+
+
+def test_vendor_body_never_reaches_the_exception() -> None:
+    provider = _provider(_handler({"error": {"message": "vendor-detail-secret"}}, status_code=400))
+
+    with pytest.raises(ProviderInvalidResponseError) as exc_info:
+        _generate(provider, GenerativeAiRequest(prompt="hola"))
+
+    assert "vendor-detail-secret" not in str(exc_info.value)
+    assert "vendor-detail-secret" not in repr(exc_info.value)
+
+
+def test_credential_never_reaches_the_exception_chain() -> None:
+    def _respond(request: httpx.Request) -> httpx.Response:
+        raise httpx.ReadTimeout("vendor timeout")
+
+    provider = _provider(_respond)
+
+    with pytest.raises(ProviderTimeoutError) as exc_info:
+        _generate(provider, GenerativeAiRequest(prompt="hola"))
+
+    cause = exc_info.value.__cause__
+    assert cause is not None
+    assert API_KEY not in str(exc_info.value)
+    assert API_KEY not in str(cause)
+
+
+def test_success_log_records_metadata_without_content(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.DEBUG)
+    provider = _provider(_handler(_success_payload(text="respuesta completa")))
+
+    _generate(provider, GenerativeAiRequest(prompt="mi prompt secreto"))
+
+    record = caplog.records[-1]
+    assert record.getMessage() == "provider.call.completed"
+    assert record.provider == "gemini"
+    assert record.provider_model == "gemini-3.8-flash-2026-01-01"
+    assert record.prompt_chars == len("mi prompt secreto")
+    assert record.completion_chars == len("respuesta completa")
+    assert record.duration_ms >= 0
+
+    logged = _logged_text(caplog)
+    assert "mi prompt secreto" not in logged
+    assert "respuesta completa" not in logged
+    assert API_KEY not in logged
+
+
+def test_failure_log_records_the_error_code_without_detail(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.DEBUG)
+    provider = _provider(_handler({"error": {"message": "vendor-detail-secret"}}, status_code=429))
+
+    with pytest.raises(ProviderRateLimitError):
+        _generate(provider, GenerativeAiRequest(prompt="mi prompt secreto"))
+
+    record = caplog.records[-1]
+    assert record.getMessage() == "provider.call.failed"
+    assert record.provider == "gemini"
+    assert record.error_code == "PROVIDER_RATE_LIMIT"
+
+    logged = _logged_text(caplog)
+    assert "vendor-detail-secret" not in logged
+    assert "mi prompt secreto" not in logged
+    assert API_KEY not in logged
+
+
+def test_timeout_log_records_the_error_code(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.DEBUG)
+
+    def _respond(request: httpx.Request) -> httpx.Response:
+        raise httpx.ReadTimeout("vendor timeout")
+
+    provider = _provider(_respond)
+
+    with pytest.raises(ProviderTimeoutError):
+        _generate(provider, GenerativeAiRequest(prompt="hola"))
+
+    record = caplog.records[-1]
+    assert record.error_code == "PROVIDER_TIMEOUT"
+
+
+def test_deprecation_header_is_signalled_without_logging_the_header(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.DEBUG)
+
+    def _respond(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json=_success_payload(),
+            headers={"x-deprecation-warning": "use the new model"},
+        )
+
+    provider = _provider(_respond)
+    _generate(provider, GenerativeAiRequest(prompt="hola"))
+
+    messages = [record.getMessage() for record in caplog.records]
+    assert "provider.call.deprecation" in messages
+
+    logged = _logged_text(caplog)
+    assert "x-deprecation-warning" not in logged
+    assert "use the new model" not in logged
+
+
+def test_json_logging_emits_the_provider_metadata() -> None:
+    record = logging.LogRecord(
+        name="thehouse_genai.providers.gemini",
+        level=logging.INFO,
+        pathname=__file__,
+        lineno=1,
+        msg="provider.call.completed",
+        args=(),
+        exc_info=None,
+    )
+    record.provider = "gemini"
+    record.provider_model = "gemini-3.8-flash"
+    record.prompt_chars = 12
+    record.completion_chars = 4
+    record.duration_ms = 1.5
+
+    payload = json.loads(JsonFormatter().format(record))
+
+    assert payload["provider"] == "gemini"
+    assert payload["provider_model"] == "gemini-3.8-flash"
+    assert payload["prompt_chars"] == 12
+    assert payload["completion_chars"] == 4
+    assert payload["duration_ms"] == 1.5

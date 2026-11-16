@@ -73,6 +73,12 @@
   bloqueada o vacía a `ProviderInvalidResponseError`.
 - El cuerpo de la respuesta del vendor nunca se incluye en una excepción: la taxonomía
   de 002 no admite detalle, de modo que no hay por dónde filtrarlo.
+- El estado HTTP se inspecciona antes de parsear el cuerpo, de modo que la página de
+  error del vendor nunca llega a leerse.
+- Cuando la respuesta trae una cabecera de deprecación, el adaptador emite un registro
+  propio (`provider.call.deprecation`) con `provider` y `provider_model`, sin volcar
+  ni el nombre ni el valor de la cabecera: el log nunca lleva cabeceras del vendor.
+  El script de smoke test (B7) muestra esa cabecera al operador.
 
 ## Uso previsto y política de datos
 

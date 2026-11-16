@@ -180,6 +180,14 @@ hardcodea en el código. La matriz comparativa y las fuentes están en
   `None` (se cierra la deuda de 002); con `GENAI_PROVIDER=gemini` ambos son
   obligatorios al arrancar y el mensaje de error nunca incluye el valor de la
   credencial.
+- D-16: el adaptador registra `provider.call.completed` y `provider.call.failed` con
+  `provider`, `provider_model`, `error_code`, `duration_ms`, `prompt_chars` y
+  `completion_chars`; nunca el prompt, la respuesta, las cabeceras ni la credencial.
+  El estado HTTP se inspecciona antes de parsear el cuerpo, de modo que la página de
+  error del vendor nunca llega a una excepción ni a un log.
+- D-17: la presencia de una cabecera de deprecación del vendor se señala con un
+  registro propio (`provider.call.deprecation`), sin volcar ni el nombre ni el valor
+  de la cabecera; el detalle lo verá el script de smoke test (B7).
 
 ## Evidencia resumida
 

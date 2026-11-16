@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import ast
 import socket
+import subprocess
+import sys
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -258,3 +260,26 @@ def test_network_block_rejects_external_dns() -> None:
 
 def test_network_block_allows_loopback() -> None:
     assert socket.getaddrinfo("127.0.0.1", 80)
+
+
+def test_importing_the_port_does_not_load_httpx() -> None:
+    """The provider package must stay free of HTTP dependencies for the port.
+
+    The check runs in a clean subprocess, so it observes the real import graph
+    instead of the modules already loaded by the test session.
+    """
+
+    code = (
+        "import sys\n"
+        "import thehouse_genai.providers.base\n"
+        "print('httpx' in sys.modules)\n"
+    )
+    result = subprocess.run(  # noqa: S603 - static interpreter and static code
+        [sys.executable, "-c", code],
+        capture_output=True,
+        text=True,
+        check=True,
+        cwd=REPO_ROOT,
+    )
+
+    assert result.stdout.strip() == "False"
