@@ -8,9 +8,9 @@ from __future__ import annotations
 
 import json
 from functools import lru_cache
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, Self
 
-from pydantic import Field, SecretStr, field_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
@@ -19,9 +19,10 @@ class Settings(BaseSettings):
 
     The provider block (`genai_provider`, `genai_api_key`, `genai_model`,
     `genai_timeout_seconds`, `genai_max_input_chars`) is validated since spec 002.
-    In G02 only the `fake` provider is accepted and no external call is ever made; the
-    real provider and its credential are consumed by spec 011 behind the same port.
-    Never log `genai_api_key`.
+    Since spec 011 the `gemini` provider is accepted by the configuration and
+    requires a credential and a model id; the factory still builds only the `fake`
+    provider until its own block closes, so a `gemini` configuration fails fast
+    instead of calling anything. Never log `genai_api_key`.
     """
 
     model_config = SettingsConfigDict(
@@ -37,10 +38,11 @@ class Settings(BaseSettings):
     cors_origins: Annotated[list[str], NoDecode] = Field(default_factory=list)
     max_request_bytes: int = Field(default=65_536, ge=1_024, le=10_485_760)
 
-    # Provider configuration (spec 002). Only "fake" exists in G02 and it never calls
-    # out; the real provider arrives in spec 011 behind the same port.
+    # Provider configuration (spec 002, extended by spec 011). "gemini" is accepted
+    # by the configuration and requires a credential and a model id; the factory
+    # still builds only "fake" until its own block closes.
     # Never log `genai_api_key`.
-    genai_provider: Literal["fake"] | None = None
+    genai_provider: Literal["fake", "gemini"] | None = None
     genai_api_key: SecretStr | None = None
     genai_model: str | None = None
     genai_timeout_seconds: float = Field(default=15.0, gt=0, le=120)
@@ -59,6 +61,53 @@ class Settings(BaseSettings):
         if not candidate:
             return None
         return candidate
+
+    @field_validator("genai_api_key", mode="before")
+    @classmethod
+    def _normalize_genai_api_key(cls, value: Any) -> Any:
+        """Treat a blank credential as unset instead of an empty secret."""
+
+        if value is None:
+            return None
+        if isinstance(value, SecretStr):
+            text = value.get_secret_value()
+        elif isinstance(value, str):
+            text = value
+        else:
+            return value
+        if not text.strip():
+            return None
+        return SecretStr(text)
+
+    @field_validator("genai_model", mode="before")
+    @classmethod
+    def _normalize_genai_model(cls, value: Any) -> Any:
+        """Trim the model id and treat a blank value as unset."""
+
+        if value is None:
+            return None
+        if not isinstance(value, str):
+            return value
+        candidate = value.strip()
+        if not candidate:
+            return None
+        return candidate
+
+    @model_validator(mode="after")
+    def _require_gemini_credentials(self) -> Self:
+        """Require a credential and a model id when the real provider is selected.
+
+        The messages never carry the credential value, so a misconfigured start-up
+        cannot expose the secret.
+        """
+
+        if self.genai_provider != "gemini":
+            return self
+        if self.genai_api_key is None:
+            raise ValueError("GENAI_API_KEY is required when GENAI_PROVIDER is 'gemini'")
+        if self.genai_model is None:
+            raise ValueError("GENAI_MODEL is required when GENAI_PROVIDER is 'gemini'")
+        return self
 
     @field_validator("cors_origins", mode="before")
     @classmethod

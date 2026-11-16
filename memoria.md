@@ -176,6 +176,10 @@ hardcodea en el código. La matriz comparativa y las fuentes están en
   ajena a la taxonomía, para credencial o modelo ausentes con proveedor `gemini`.
 - D-14: `GENAI_PROVIDER` sin definir sigue lanzando `UnsupportedProviderError`; no
   hay proveedor por defecto.
+- D-15: `GENAI_API_KEY` y `GENAI_MODEL` vacíos o con solo espacios se normalizan a
+  `None` (se cierra la deuda de 002); con `GENAI_PROVIDER=gemini` ambos son
+  obligatorios al arrancar y el mensaje de error nunca incluye el valor de la
+  credencial.
 
 ## Evidencia resumida
 
@@ -198,8 +202,8 @@ hardcodea en el código. La matriz comparativa y las fuentes están en
 
 ## Deuda y pendientes
 
-- `GENAI_API_KEY=` y `GENAI_MODEL=` vacíos quedan como `SecretStr('')` y `''` en lugar
-  de `None`; se normalizan en 011, bloque B2.
+- `GENAI_API_KEY=` y `GENAI_MODEL=` vacíos quedaban como `SecretStr('')` y `''` en lugar
+  de `None`; normalizados en 011, bloque B2.
 - `StarletteDeprecationWarning` de `TestClient` con `httpx`; se revisa en 008.
 - El logging estructurado de las llamadas al proveedor (modelo, duración, `error_code`)
   se inicia en 011 con la allowlist ampliada (D-4) y se completa en 007.

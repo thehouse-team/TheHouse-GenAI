@@ -10,7 +10,7 @@
 
 - [x] **B1** — Activación, evaluación y decisión: cabeceras de la spec, `memoria.md`,
       `evaluation.md`, `decision.md`, `README.md`.
-- [ ] **B2** — Configuración validada: `Literal["fake", "gemini"]`, vacíos como
+- [x] **B2** — Configuración validada: `Literal["fake", "gemini"]`, vacíos como
       `None`, credencial y modelo obligatorios con proveedor `gemini`.
 - [ ] **B3** — Adaptador: mapeo de request y respuesta, cliente inyectable.
 - [ ] **B4** — Adaptador: mapeo de errores, timeout y logging del modelo interno.

@@ -111,7 +111,92 @@ def test_genai_provider_is_normalized(value: str) -> None:
     assert settings.genai_provider == "fake"
 
 
-@pytest.mark.parametrize("value", ["gemini", "openai"])
+@pytest.mark.parametrize("value", ["GEMINI", " gemini "])
+def test_genai_provider_accepts_normalized_gemini(value: str) -> None:
+    settings = Settings(
+        _env_file=None,
+        genai_provider=value,
+        genai_api_key="test-key",
+        genai_model="gemini-3.8-flash",
+    )
+
+    assert settings.genai_provider == "gemini"
+
+
+@pytest.mark.parametrize("value", ["openai", "azure", "unknown"])
 def test_genai_provider_rejects_unsupported_value(value: str) -> None:
     with pytest.raises(ValidationError):
         Settings(_env_file=None, genai_provider=value)
+
+
+def test_gemini_without_api_key_is_rejected() -> None:
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, genai_provider="gemini", genai_model="gemini-3.8-flash")
+
+
+def test_gemini_without_model_is_rejected() -> None:
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, genai_provider="gemini", genai_api_key="test-key")
+
+
+def test_gemini_with_credentials_is_accepted() -> None:
+    settings = Settings(
+        _env_file=None,
+        genai_provider="gemini",
+        genai_api_key="test-key",
+        genai_model="gemini-3.8-flash",
+    )
+
+    assert settings.genai_provider == "gemini"
+    assert settings.genai_api_key is not None
+    assert settings.genai_api_key.get_secret_value() == "test-key"
+    assert settings.genai_model == "gemini-3.8-flash"
+
+
+def test_missing_credential_error_does_not_leak_the_key() -> None:
+    with pytest.raises(ValidationError) as exc_info:
+        Settings(
+            _env_file=None,
+            genai_provider="gemini",
+            genai_api_key="super-secret-key",
+            genai_model="",
+        )
+
+    message = str(exc_info.value)
+    assert "super-secret-key" not in message
+    assert "GENAI_MODEL" in message
+
+
+def test_missing_api_key_error_names_the_variable() -> None:
+    with pytest.raises(ValidationError, match="GENAI_API_KEY"):
+        Settings(_env_file=None, genai_provider="gemini", genai_model="gemini-3.8-flash")
+
+
+def test_empty_api_key_is_none() -> None:
+    settings = Settings(_env_file=None, genai_api_key="")
+
+    assert settings.genai_api_key is None
+
+
+def test_blank_api_key_is_none() -> None:
+    settings = Settings(_env_file=None, genai_api_key="   ")
+
+    assert settings.genai_api_key is None
+
+
+def test_blank_model_is_none() -> None:
+    settings = Settings(_env_file=None, genai_model="   ")
+
+    assert settings.genai_model is None
+
+
+def test_empty_model_is_none() -> None:
+    settings = Settings(_env_file=None, genai_model="")
+
+    assert settings.genai_model is None
+
+
+def test_model_is_trimmed() -> None:
+    settings = Settings(_env_file=None, genai_model="  gemini-3.8-flash  ")
+
+    assert settings.genai_model == "gemini-3.8-flash"
