@@ -31,11 +31,19 @@ FORBIDDEN_IMPORTS = frozenset(
     }
 )
 
+# The Gemini adapter is the only module of the service allowed to speak HTTP. The
+# exception is explicit, minimal and keyed by path suffix.
+ALLOWED_FORBIDDEN_IMPORTS: dict[str, frozenset[str]] = {
+    "providers/gemini.py": frozenset({"httpx"}),
+}
+
 PROVIDERS_PACKAGE = f"{PROJECT_PACKAGE}.providers"
 PROVIDER_IMPLEMENTATIONS = (
     f"{PROVIDERS_PACKAGE}.fake",
     f"{PROVIDERS_PACKAGE}.factory",
+    f"{PROVIDERS_PACKAGE}.gemini",
 )
+PROVIDER_IMPLEMENTATION_ALIASES = frozenset({"fake", "factory", "gemini"})
 
 
 def _resolve_module(module: str | None, level: int, package: str) -> str | None:
@@ -75,13 +83,23 @@ def _is_provider_import(module: str) -> bool:
 def _is_provider_implementation(module: str, alias: str | None) -> bool:
     if module.startswith(PROVIDER_IMPLEMENTATIONS):
         return True
-    return module == PROVIDERS_PACKAGE and alias in {"fake", "factory"}
+    return module == PROVIDERS_PACKAGE and alias in PROVIDER_IMPLEMENTATION_ALIASES
+
+
+def _allowed_roots(file_name: str) -> frozenset[str]:
+    """Return the forbidden roots this file is allowed to import."""
+
+    normalized = file_name.replace("\\", "/")
+    for suffix, roots in ALLOWED_FORBIDDEN_IMPORTS.items():
+        if normalized.endswith(suffix):
+            return roots
+    return frozenset()
 
 
 def _display(module: str, alias: str | None) -> str:
     """Return the dotted path of what is actually imported."""
 
-    if module == PROVIDERS_PACKAGE and alias in {"fake", "factory"}:
+    if module == PROVIDERS_PACKAGE and alias in PROVIDER_IMPLEMENTATION_ALIASES:
         return f"{PROVIDERS_PACKAGE}.{alias}"
     return module
 
@@ -93,9 +111,10 @@ def find_violations(source: str, *, file_name: str, package: str) -> list[str]:
     """
 
     violations: list[str] = []
+    allowed = _allowed_roots(file_name)
     for module, alias in _iter_imports(ast.parse(source), package):
         root = module.split(".")[0]
-        if root in FORBIDDEN_IMPORTS:
+        if root in FORBIDDEN_IMPORTS and root not in allowed:
             violations.append(
                 f"{file_name} imports {module}: forbidden dependency on {root}"
             )
@@ -183,6 +202,38 @@ def test_detector_reports_an_application_dependency_on_an_implementation() -> No
 
     assert violations
     assert "fake" in violations[0]
+
+
+def test_detector_reports_an_application_dependency_on_the_gemini_adapter() -> None:
+    violations = find_violations(
+        "from thehouse_genai.providers import gemini\n",
+        file_name="thehouse_genai/application/sample.py",
+        package=f"{PROJECT_PACKAGE}.application",
+    )
+
+    assert violations
+    assert "gemini" in violations[0]
+
+
+def test_detector_accepts_httpx_in_the_gemini_adapter() -> None:
+    violations = find_violations(
+        "import httpx\n",
+        file_name="src/thehouse_genai/providers/gemini.py",
+        package=f"{PROJECT_PACKAGE}.providers",
+    )
+
+    assert not violations
+
+
+def test_detector_still_rejects_httpx_outside_the_gemini_adapter() -> None:
+    violations = find_violations(
+        "import httpx\n",
+        file_name="src/thehouse_genai/providers/fake.py",
+        package=f"{PROJECT_PACKAGE}.providers",
+    )
+
+    assert violations
+    assert "httpx" in violations[0]
 
 
 def test_detector_accepts_a_clean_module() -> None:
