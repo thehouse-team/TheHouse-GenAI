@@ -6,17 +6,19 @@ estructurados. No calcula Smart Match, no consulta propiedades y no sustituye al
 
 ## Estado
 
-G01 Foundation y G02 (`002-provider-abstraction`) implementados. G02 define el puerto
-`GenerativeAiProvider`, sus DTOs inmutables, la taxonomía de errores, el guard central
-de timeout y límite de entrada, un `FakeProvider` determinista y la factory de
-selección: todo offline, sin sockets y sin proveedor real.
+G01 Foundation, G02 (`002-provider-abstraction`) y G03 (`011-llm-provider`)
+implementados.
 
-G03 (`011-llm-provider`) está en curso. La evaluación de proveedores y la decisión ya
-están cerradas: el proveedor elegido es **Gemini API (Google AI Studio)**, familia
+G02 define el puerto `GenerativeAiProvider`, sus DTOs inmutables, la taxonomía de
+errores, el guard central de timeout y límite de entrada, un `FakeProvider`
+determinista y la factory de selección: todo offline, sin sockets y sin proveedor real.
+
+G03 eligió y conectó el proveedor real: **Gemini API (Google AI Studio)**, familia
 Flash, por REST con `httpx` y sin SDK nuevo, detrás del mismo puerto. La matriz
 comparativa con sus fuentes está en `specs/011-llm-provider/evaluation.md` y la
 decisión, con las alternativas descartadas y las condiciones de revisión, en
-`specs/011-llm-provider/decision.md`.
+`specs/011-llm-provider/decision.md`. En desarrollo se usó `gemini-3.5-flash-lite` en
+la capa gratuita, con prompts sintéticos.
 
 El roadmap por fases (G01–G10) y el estado de cada spec están en `memoria.md`. Los
 contratos de IA (`explain-match`, `parse-search`) siguen planificados en `specs/` y

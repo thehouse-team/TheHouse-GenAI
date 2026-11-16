@@ -1,6 +1,6 @@
 # Decisión de proveedor LLM — 011-llm-provider
 
-- **Estado:** ACTIVE
+- **Estado:** IMPLEMENTED
 - **Fecha:** 2026-11-15
 - **Elegido:** **Gemini API (Google AI Studio)**, familia Flash, por **REST** con
   `httpx` y sin SDK nuevo. El id del modelo se fija con `GENAI_MODEL`; no se
@@ -96,12 +96,12 @@
 - **Modelo usado en desarrollo:** `gemini-3.5-flash-lite` (familia Flash Lite),
   configurado por entorno con `GENAI_MODEL`. No hay id por defecto en el repositorio.
 - **Smoke test del 2026-11-16**, en capa gratuita con prompts sintéticos: latencia
-  entre 817,0 ms y 1.461,3 ms en seis llamadas, sin errores, `finish_reason` `STOP` en
+  entre 817.0 ms y 1461.3 ms en seis llamadas, sin errores, `finish_reason` `STOP` en
   todas, español natural sin datos inventados y JSON válido. Detalle en `evidence.md`.
 - **Ninguna condición de revisión se activa** con estas mediciones:
   1. Los precios y los límites no han cambiado respecto a lo evaluado el 2026-11-15.
   2. El acceso a Azure sigue bloqueado en nuestra suscripción.
-  3. La latencia medida (máximo de 1,46 s) está muy por debajo del timeout de 15 s y
+  3. La latencia medida (máximo de 1.46 s) está muy por debajo del timeout de 15 s y
      la calidad en español es la esperada, con un único defecto menor de espaciado:
      no procede reevaluar OpenAI.
   4. `generateContent` sigue siendo el endpoint documentado y en uso; no hay aviso de

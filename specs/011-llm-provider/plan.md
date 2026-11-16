@@ -1,6 +1,6 @@
 # Plan — 011-llm-provider Proveedor LLM real
 
-- **Estado:** ACTIVE
+- **Estado:** IMPLEMENTED
 - **Depende de:** 002-provider-abstraction
 - **Fecha de activación:** 2026-11-15
 

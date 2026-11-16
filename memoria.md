@@ -1,6 +1,6 @@
 # Memoria del proyecto — TheHouse GenAI
 
-Última actualización: 2026-11-15
+Última actualización: 2026-11-16
 
 ## Identidad
 
@@ -22,7 +22,7 @@ Smart Match, no consulta propiedades y no contiene Mobile.
 | 008-testing | PLANNED | Estrategia completa y contract tests (transversal, cierra en G09) |
 | 009-ci-cd | PLANNED | Pipeline completo y despliegue futuro |
 | 010-integration-thehouse | PLANNED | Contratos y operación con Backend |
-| 011-llm-provider | ACTIVE | Evaluación de proveedores y adaptador real detrás del puerto |
+| 011-llm-provider | IMPLEMENTED | Evaluación de proveedores y adaptador real detrás del puerto |
 
 ## Mapeo de fases
 
@@ -30,7 +30,7 @@ Smart Match, no consulta propiedades y no contiene Mobile.
 | --- | --- | --- |
 | G01 | 001-foundation | Servicio base, health, configuración, CI (IMPLEMENTED) |
 | G02 | 002-provider-abstraction | Puerto LLM, DTOs, errores, fake y factory, 100% offline (IMPLEMENTED) |
-| G03 | 011-llm-provider | Evaluación de proveedores y adaptador real |
+| G03 | 011-llm-provider | Evaluación de proveedores y adaptador real (IMPLEMENTED) |
 | G04 | 003-smart-match-explanation | Endpoint explain-match con auth mínima de servicio |
 | G05 | 005-security | Endurecimiento de seguridad, PII, prompt injection |
 | G06 | 006-moderation | Moderación de contenido |
@@ -45,16 +45,15 @@ cobertura) se acumulan en cada fase y la spec se cierra en G09, junto con
 
 ## Spec activa
 
-`011-llm-provider` (G03) está `ACTIVE` desde 2026-11-15 en la rama
-`feature/llm-provider`. Su plan está aprobado y la decisión de proveedor quedó
-documentada en `specs/011-llm-provider/decision.md`, con la matriz comparativa en
-`specs/011-llm-provider/evaluation.md`. `002-provider-abstraction` permanece
-`IMPLEMENTED` y el resto de specs, `PLANNED`. Solo una spec puede estar `ACTIVE` a
-la vez.
+Ninguna. `011-llm-provider` (G03) pasó a `IMPLEMENTED` el 2026-11-16 con sus
+criterios verificados, los gates en verde y la evidencia registrada en
+`specs/011-llm-provider/evidence.md`, incluido el smoke test manual ejecutado con
+una credencial real el 2026-11-16. `001-foundation` y `002-provider-abstraction`
+permanecen `IMPLEMENTED` y el resto de specs, `PLANNED`. Solo una spec puede estar
+`ACTIVE` a la vez.
 
-La spec no se cierra como `IMPLEMENTED` hasta que el smoke test manual se haya
-ejecutado con una credencial real y su resultado quede registrado en
-`specs/011-llm-provider/evidence.md`.
+La siguiente spec en orden es `003-smart-match-explanation` (G04), que se activa en
+su propia rama cuando se apruebe su plan.
 
 ## Enmiendas de la constitución
 
@@ -220,26 +219,47 @@ hardcodea en el código. La matriz comparativa y las fuentes están en
 - Rama `feature/provider-abstraction`: 6 commits, uno por bloque de implementación.
 - Evidencia completa en `specs/002-provider-abstraction/evidence.md`.
 
+### 011-llm-provider
+
+- `ruff check .`: sin hallazgos.
+- `mypy src`: sin errores (strict) en 19 archivos.
+- `mypy --strict scripts/smoke_provider.py`: sin errores.
+- `pytest`: 279 tests aprobados (102 en `test_providers.py`, 57 en
+  `test_provider_adapter.py`, 53 en `test_import_boundaries.py`, 33 en `test_config.py`,
+  17 en `test_provider_factory.py`, 8 en `test_smoke_script.py`, 5 en `test_errors.py` y
+  4 en `test_health.py`), con el guard de red activo.
+- Smoke test manual ejecutado el 2026-11-16 con `gemini-3.5-flash-lite` en capa
+  gratuita: seis llamadas sin errores, latencia entre 817.0 ms y 1461.3 ms, español
+  natural sin datos inventados y JSON válido.
+- Rama `feature/llm-provider`: 8 commits, uno por bloque.
+- Evidencia completa en `specs/011-llm-provider/evidence.md`.
+
 ## Deuda y pendientes
 
 - `GENAI_API_KEY=` y `GENAI_MODEL=` vacíos quedaban como `SecretStr('')` y `''` en lugar
   de `None`; normalizados en 011, bloque B2.
-- `StarletteDeprecationWarning` de `TestClient` con `httpx`; se revisa en 008.
+- `StarletteDeprecationWarning` de `TestClient` con `httpx`; se mantiene la deuda y se
+  revisa en 008.
 - El logging estructurado de las llamadas al proveedor (modelo, duración, `error_code`)
   se inicia en 011 con la allowlist ampliada (D-4) y se completa en 007.
-- Construir el adaptador real detrás del puerto (011, en curso): evaluación y decisión
-  cerradas en el bloque B1.
-- El smoke test manual (`scripts/smoke_provider.py`) aún no se ha escrito ni ejecutado:
-  su ejecución con credencial real es requisito para cerrar 011 (D-12).
+- Usar contexto es-MX en los prompts reales de 003 y 004: moneda en MXN y formato de
+  fecha y hora UTTT. El smoke test de 011 no fija esta convención porque su objetivo
+  es medir latencia y calidad con datos sintéticos.
+- La confirmación interactiva de `scripts/smoke_provider.py` acepta «si» en minúsculas
+  porque normaliza a mayúsculas; no es un fallo, pero conviene decidir si se exige
+  mayúscula estricta.
+- El precio por millón de tokens del modelo de desarrollo
+  (`gemini-3.5-flash-lite`) queda por anotar desde la fuente de precios, y el modelo de
+  producción se decide cuando se cree el proyecto de pago (G09).
 - Contratos y guardrails de explicación (003) y parseo (004).
 - Auth mínima de servicio en 003; endurecimiento, PII y prompt injection en 005.
 - Moderación, observabilidad avanzada, contract tests e integración (006–010).
-- No hay despliegue ni credenciales reales configuradas.
+- No hay despliegue. Hay una credencial de desarrollo en el entorno local, fuera del
+  repositorio: la capa gratuita de Gemini se usa solo con prompts sintéticos.
 
 ## Próximo paso
 
-G03 = `011-llm-provider`, en curso: la evaluación y la decisión de proveedor están
-cerradas (bloque B1). Continúa el adaptador `GeminiProvider` detrás del puerto
-`GenerativeAiProvider`, la configuración validada, el registro en la factory, el test
-de fronteras y el script de smoke test manual, por bloques y dejando el repositorio
-verde. `003-smart-match-explanation` permanece `PLANNED` hasta el cierre de 011.
+G04 = `003-smart-match-explanation`: endpoint `explain-match` con autenticación mínima
+de servicio (`X-Service-Key`), sin alterar los hechos calculados por el Backend. La
+spec sigue `PLANNED`: se activa en su propia rama cuando su plan esté aprobado, y
+`004-natural-language-search` permanece `PLANNED` hasta que 003 cierre.

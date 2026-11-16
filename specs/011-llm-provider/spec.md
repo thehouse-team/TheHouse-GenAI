@@ -1,6 +1,6 @@
 # 011-llm-provider — Proveedor LLM real
 
-- **Estado:** ACTIVE
+- **Estado:** IMPLEMENTED
 - **Depende de:** 002-provider-abstraction
 - **Habilita:** 003, 004
 - **Fecha de alta:** 2026-11-12
