@@ -14,7 +14,7 @@
       `None`, credencial y modelo obligatorios con proveedor `gemini`.
 - [ ] **B3** — Adaptador: mapeo de request y respuesta, cliente inyectable.
 - [x] **B4** — Adaptador: mapeo de errores, timeout y logging del modelo interno.
-- [ ] **B5** — Factory: registro de `gemini` y `ProviderConfigurationError`.
+- [x] **B5** — Factory: registro de `gemini` y `ProviderConfigurationError`.
 - [ ] **B6** — Frontera de imports: `httpx` permitido solo en `providers/gemini.py`.
 - [ ] **B7** — Smoke test manual opt-in, fuera de CI.
 - [ ] **B8** — Ejecución del smoke test con credencial real y registro de la evidencia.

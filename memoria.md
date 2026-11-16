@@ -188,6 +188,11 @@ hardcodea en el código. La matriz comparativa y las fuentes están en
 - D-17: la presencia de una cabecera de deprecación del vendor se señala con un
   registro propio (`provider.call.deprecation`), sin volcar ni el nombre ni el valor
   de la cabecera; el detalle lo verá el script de smoke test (B7).
+- D-18: la factory admite `fake` y `gemini`; el proveedor real se construye como
+  `GuardedProvider(GeminiProvider(...))` con el timeout y el límite de entrada de
+  `Settings`. `ProviderConfigurationError`, subclase de `ValueError` ajena a la
+  taxonomía, cubre la credencial o el modelo ausentes o inválidos: es un fallo de
+  configuración, no de una llamada.
 
 ## Evidencia resumida
 
