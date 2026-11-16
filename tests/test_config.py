@@ -98,6 +98,12 @@ def test_genai_provider_accepts_fake() -> None:
     assert settings.genai_provider == "fake"
 
 
+def test_genai_provider_accepts_gemini() -> None:
+    settings = Settings(_env_file=None, genai_provider="gemini")
+
+    assert settings.genai_provider == "gemini"
+
+
 def test_genai_provider_empty_string_is_none() -> None:
     settings = Settings(_env_file=None, genai_provider="")
 
@@ -111,7 +117,24 @@ def test_genai_provider_is_normalized(value: str) -> None:
     assert settings.genai_provider == "fake"
 
 
-@pytest.mark.parametrize("value", ["gemini", "openai"])
+@pytest.mark.parametrize("value", ["openai", "anthropic"])
 def test_genai_provider_rejects_unsupported_value(value: str) -> None:
     with pytest.raises(ValidationError):
         Settings(_env_file=None, genai_provider=value)
+
+
+def test_gemini_api_key_alias_is_resolved() -> None:
+    settings = Settings(_env_file=None, gemini_api_key="secret")
+
+    assert settings.resolved_api_key() is not None
+    assert settings.resolved_api_key().get_secret_value() == "secret"
+    assert "secret" not in repr(settings)
+
+
+def test_empty_secret_fields_normalize_to_none() -> None:
+    settings = Settings(_env_file=None, genai_api_key="", gemini_api_key="", service_api_key="")
+
+    assert settings.genai_api_key is None
+    assert settings.gemini_api_key is None
+    assert settings.service_api_key is None
+    assert settings.resolved_api_key() is None

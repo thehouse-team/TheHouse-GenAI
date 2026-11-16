@@ -1,26 +1,34 @@
-# Evidencia — 003-smart-match-explanation Explicación de Smart Match
+﻿# Evidencia — 003-smart-match-explanation Explicación de Smart Match
 
-- **Estado:** PLANNED
-- **Fecha:** —
-- **Implementación:** no iniciada
+- **Estado:** IMPLEMENTED (autorización G04 2026-11-15, contrato 003 preservando score ML externo)
+- **Fecha:** 2026-11-15
+- **Rama:** `feature/smart-match-explanation`
 
-## Resultado
+## Comandos y resultados
 
-Spec planificada. No existe implementación, ejecución de pruebas ni evidencia que
-reportar. No se debe marcar como completada hasta cumplir sus criterios.
+| Comando | Resultado |
+| --- | --- |
+| `python -m ruff check .` | PASS |
+| `python -m mypy src` | PASS (23 source files) |
+| `python -m pytest` | `177 passed, 1 warning` |
 
-## Evidencia requerida al cerrar
+## Implementación
 
-- [ ] Contrato request/response documentado y validado.
-- [ ] Explicación de fixture cita solo hechos permitidos.
-- [ ] Se rechazan números y servicios ausentes en la entrada.
-- [ ] Prompt injection en título/descripción no cambia reglas ni hechos.
-- [ ] Score faltante o fuera de rango devuelve 422.
-- [ ] Pruebas con fake provider, sin red.
-- [ ] No existe acceso a base de datos ni a propiedades.
-- [ ] Endpoint sin `X-Service-Key` devuelve 401 con el sobre estándar.
-- [ ] `X-Service-Key` incorrecto devuelve 401 sin revelar si la credencial existe.
-- [ ] La credencial no aparece en logs ni en el `repr` de `Settings`.
-- [ ] Resultados de `ruff check .`, `mypy src` y `pytest`.
-- [ ] Revisión de seguridad y confirmación de ausencia de secretos/PII.
-- [ ] Referencia al commit que implementa la spec.
+- Endpoint protegido: `POST /api/v1/generative/explain-match` (auth servicio `X-Service-Key`, comparación en tiempo constante, 401 sobre estándar).
+- Contrato request/response validado con Pydantic (`extra=forbid`): entrada estructurada con `match_score` (0-100, externo) + datos mínimos de property/university/preferences; salida `{"explanation","facts_used"}`.
+- GenAI solo redacta: prompt con contexto JSON sanitizado, `system_prompt` explícito (DATA no instrucciones, no cambiar score/ranking, no inventar, español, breve), `facts_used`/fidelidad validados en dominio.
+- Validaciones: score preservado (no se recalcula ni se expone modificado), rechazo de campos extra/PII no permitidos por schema, límite de palabras, detección de números/servicios no permitidos en salida, manejo seguro de errores provider (502/503/504/429) sin stack traces ni secretos.
+- Fallback: no se fabrica explicación generativa; ante salida inválida/error se responde fallo seguro controlado.
+
+## Pruebas clave
+
+- Auth: sin/incorrecta `X-Service-Key` -> 401.
+- Éxito con `FakeProvider`: score/contexto enviados, respuesta estructurada válida.
+- Validación entrada: score faltante/fuera de rango y campos extra rechazados (422).
+- Fidelidad/guardrails: número inventado y servicio inventado rechazados (502 seguro).
+- Prompt injection en `property.title`: no altera contrato ni expone secretos; salida segura validada.
+- Errores provider: invalid JSON/invalid response -> 502, timeout -> 504, rate limit -> 429.
+
+## Smoke real
+
+- **PROVIDER-RUNTIME-BLOCKED**: sin `GEMINI_API_KEY`/`GENAI_API_KEY` en entorno; no se ejecutó llamada real a Gemini.

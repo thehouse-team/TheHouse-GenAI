@@ -12,7 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from thehouse_genai import __version__
 from thehouse_genai.api.errors import install_exception_handlers
 from thehouse_genai.api.middleware import RequestContextMiddleware, RequestSizeLimitMiddleware
-from thehouse_genai.api.routes import health
+from thehouse_genai.api.routes import generative, health
 from thehouse_genai.infrastructure.config import Settings, get_settings
 from thehouse_genai.infrastructure.logging import configure_logging
 
@@ -55,4 +55,5 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     install_exception_handlers(app)
     app.include_router(health.router)
+    app.include_router(generative.router)
     return app

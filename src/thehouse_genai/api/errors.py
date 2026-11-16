@@ -24,7 +24,9 @@ _ERROR_CODES = {
     422: "VALIDATION_ERROR",
     429: "TOO_MANY_REQUESTS",
     500: "INTERNAL_ERROR",
+    502: "PROVIDER_ERROR",
     503: "SERVICE_UNAVAILABLE",
+    504: "PROVIDER_TIMEOUT",
 }
 
 _SAFE_MESSAGES = {
@@ -38,7 +40,9 @@ _SAFE_MESSAGES = {
     422: "Request validation failed.",
     429: "Too many requests.",
     500: "Internal server error.",
+    502: "The generative provider could not complete the request.",
     503: "Service unavailable.",
+    504: "The generative provider timed out.",
 }
 
 

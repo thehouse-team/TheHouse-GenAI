@@ -1,6 +1,6 @@
 # 005-security — Seguridad de servicio e IA
 
-- **Estado:** PLANNED
+- **Estado:** PARTIAL (2026-11-15: controles aplicados al endpoint `explain-match` bajo autorización G05; hardening global de la spec pendiente)
 - **Depende de:** 001-foundation, 002-provider-abstraction, 003, 004
 - **Habilita:** 006, 007, 009, 010
 - **Fecha de alta:** 2026-11-08

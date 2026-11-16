@@ -1,6 +1,6 @@
 # 002-provider-abstraction — Abstracción de proveedor LLM
 
-- **Estado:** IMPLEMENTED
+- **Estado:** IMPLEMENTED (extendida 2026-11-15: soporte `gemini` + adaptador real autorizado, manteniendo fake/offline tests)
 - **Depende de:** 001-foundation
 - **Habilita:** 003, 004, 011
 - **Fecha de alta:** 2026-11-08

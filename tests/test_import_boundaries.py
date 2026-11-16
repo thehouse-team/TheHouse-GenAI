@@ -31,10 +31,19 @@ FORBIDDEN_IMPORTS = frozenset(
     }
 )
 
+# Concrete HTTP adapters may use transport libraries; domain/application must not.
+ALLOWED_TRANSPORT_FILES = frozenset(
+    {
+        str(Path("src") / "thehouse_genai" / "providers" / "gemini.py"),
+        "src/thehouse_genai/providers/gemini.py",
+    }
+)
+
 PROVIDERS_PACKAGE = f"{PROJECT_PACKAGE}.providers"
 PROVIDER_IMPLEMENTATIONS = (
     f"{PROVIDERS_PACKAGE}.fake",
     f"{PROVIDERS_PACKAGE}.factory",
+    f"{PROVIDERS_PACKAGE}.gemini",
 )
 
 
@@ -87,15 +96,13 @@ def _display(module: str, alias: str | None) -> str:
 
 
 def find_violations(source: str, *, file_name: str, package: str) -> list[str]:
-    """Return every forbidden import of a source snippet.
+    """Return every forbidden import of a source snippet."""
 
-    The message states which file imports what, so a failure is actionable.
-    """
-
+    normalized_file = file_name.replace("\\", "/")
     violations: list[str] = []
     for module, alias in _iter_imports(ast.parse(source), package):
         root = module.split(".")[0]
-        if root in FORBIDDEN_IMPORTS:
+        if root in FORBIDDEN_IMPORTS and normalized_file not in ALLOWED_TRANSPORT_FILES:
             violations.append(
                 f"{file_name} imports {module}: forbidden dependency on {root}"
             )

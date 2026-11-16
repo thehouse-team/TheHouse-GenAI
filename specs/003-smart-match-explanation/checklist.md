@@ -1,6 +1,6 @@
 # Checklist — 003-smart-match-explanation Explicación de Smart Match
 
-- **Estado:** PLANNED
+- **Estado:** IMPLEMENTED (2026-11-15, ver `evidence.md`)
 
 ## Criterios de aceptación
 

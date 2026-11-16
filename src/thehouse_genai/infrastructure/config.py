@@ -1,7 +1,7 @@
 """Typed runtime configuration.
 
-Configuration is loaded from environment variables and an optional local `.env`.
-Invalid values raise a clear validation error at startup; secrets use `SecretStr`.
+Configuration is loaded from environment variables and an optional local .env.
+Invalid values raise a clear validation error at startup; secrets use SecretStr.
 """
 
 from __future__ import annotations
@@ -17,11 +17,9 @@ from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 class Settings(BaseSettings):
     """Application settings.
 
-    The provider block (`genai_provider`, `genai_api_key`, `genai_model`,
-    `genai_timeout_seconds`, `genai_max_input_chars`) is validated since spec 002.
-    In G02 only the `fake` provider is accepted and no external call is ever made; the
-    real provider and its credential are consumed by spec 011 behind the same port.
-    Never log `genai_api_key`.
+    The provider block is validated at startup. ake is always available for tests;
+    gemini is the authorized real provider for smart-match explanation. Never log
+    credentials or service secrets.
     """
 
     model_config = SettingsConfigDict(
@@ -37,14 +35,19 @@ class Settings(BaseSettings):
     cors_origins: Annotated[list[str], NoDecode] = Field(default_factory=list)
     max_request_bytes: int = Field(default=65_536, ge=1_024, le=10_485_760)
 
-    # Provider configuration (spec 002). Only "fake" exists in G02 and it never calls
-    # out; the real provider arrives in spec 011 behind the same port.
-    # Never log `genai_api_key`.
-    genai_provider: Literal["fake"] | None = None
+    # Provider configuration. Never log secrets.
+    genai_provider: Literal["fake", "gemini"] | None = None
     genai_api_key: SecretStr | None = None
+    gemini_api_key: SecretStr | None = None
     genai_model: str | None = None
     genai_timeout_seconds: float = Field(default=15.0, gt=0, le=120)
     genai_max_input_chars: int = Field(default=4_000, ge=1, le=100_000)
+    genai_max_output_tokens: int = Field(default=256, ge=1, le=2_048)
+    genai_max_output_chars: int = Field(default=1_200, ge=1, le=10_000)
+    genai_max_retries: int = Field(default=2, ge=0, le=3)
+
+    # Service-to-service auth for generative endpoints.
+    service_api_key: SecretStr | None = None
 
     @field_validator("genai_provider", mode="before")
     @classmethod
@@ -59,6 +62,15 @@ class Settings(BaseSettings):
         if not candidate:
             return None
         return candidate
+
+    @field_validator("genai_api_key", "gemini_api_key", "service_api_key", mode="before")
+    @classmethod
+    def _empty_secret_to_none(cls, value: Any) -> Any:
+        """Normalize empty secrets to None for simpler validation."""
+
+        if isinstance(value, str) and value.strip() == "":
+            return None
+        return value
 
     @field_validator("cors_origins", mode="before")
     @classmethod
@@ -88,6 +100,22 @@ class Settings(BaseSettings):
                 raise ValueError(f"invalid CORS origin: {origin!r}")
             normalized.append(origin.rstrip("/"))
         return normalized
+
+    def resolved_api_key(self) -> SecretStr | None:
+        """Return the configured provider credential without exposing it."""
+
+        if self.genai_api_key is not None:
+            return self.genai_api_key
+        return self.gemini_api_key
+
+    def resolved_model(self) -> str:
+        """Return the configured model or the safe default for the provider."""
+
+        if self.genai_model and self.genai_model.strip():
+            return self.genai_model.strip()
+        if self.genai_provider == "gemini":
+            return "gemini-2.5-flash-lite"
+        return "fake-model"
 
 
 @lru_cache(maxsize=1)

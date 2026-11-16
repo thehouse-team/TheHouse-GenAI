@@ -1,6 +1,6 @@
 # Tareas — 005-security Seguridad de servicio e IA
 
-- **Estado:** PLANNED
+- **Estado:** PARTIAL (2026-11-15, ver `evidence.md`)
 
 > No iniciar hasta que la spec sea la activa y su plan esté aprobado.
 

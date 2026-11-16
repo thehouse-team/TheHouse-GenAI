@@ -1,6 +1,6 @@
 # 003-smart-match-explanation — Explicación de Smart Match
 
-- **Estado:** PLANNED
+- **Estado:** IMPLEMENTED (alcance autorizado 2026-11-15: endpoint explain-match, auth servicio mínima, fake/real provider abstraction, guardrails y tests; smoke real Gemini bloqueado por ausencia de credencial en entorno)
 - **Depende de:** 001-foundation, 002-provider-abstraction, 011-llm-provider
 - **Habilita:** 010-integration-thehouse
 - **Fecha de alta:** 2026-11-08
