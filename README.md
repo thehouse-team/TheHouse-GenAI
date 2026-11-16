@@ -67,5 +67,14 @@ por REST con `httpx`. Su configuración es por entorno:
 | `GENAI_MAX_INPUT_CHARS` | No | Límite de entrada; 4000 caracteres por defecto |
 
 El script `scripts/smoke_provider.py` es una utilidad **manual y opt-in** para
-validar una credencial real: no lo ejecuta CI y nunca imprime la clave. Está pendiente
-de escribirse en el bloque B7 de `011-llm-provider`.
+validar una credencial real: no lo ejecuta CI y nunca imprime la clave. Se ejecuta
+con la capa gratuita y prompts sintéticos:
+
+```bash
+python scripts/smoke_provider.py --i-have-a-real-key
+```
+
+El script pide una confirmación escrita (`SI`, o `--yes` para omitirla), mide la
+latencia de dos casos (texto en español y salida JSON) e imprime una tabla resumen
+lista para `specs/011-llm-provider/evidence.md`. Si la variable `CI` está activa,
+sale con código 2 sin hacer nada.

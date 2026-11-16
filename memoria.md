@@ -193,6 +193,13 @@ hardcodea en el código. La matriz comparativa y las fuentes están en
   `Settings`. `ProviderConfigurationError`, subclase de `ValueError` ajena a la
   taxonomía, cubre la credencial o el modelo ausentes o inválidos: es un fallo de
   configuración, no de una llamada.
+- D-19: `scripts/smoke_provider.py` es una utilidad manual opt-in: si la variable
+  `CI` está activa sale con código 2 sin hacer nada; si no, exige `--i-have-a-real-key`
+  o `GENAI_SMOKE=1` y una confirmación escrita (`SI`, o `--yes` para omitirla). No
+  imprime la credencial, solo su longitud, y solo usa el puerto del proveedor.
+- D-20: los scripts pueden usar el paquete (incluida la factory), pero no importar
+  clientes HTTP ni SDKs de proveedor: el barrido de fronteras los cubre. El paquete
+  publica `py.typed` para que `mypy --strict` pueda comprobar los scripts.
 
 ## Evidencia resumida
 
