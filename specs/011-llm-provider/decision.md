@@ -91,6 +91,28 @@
 - La allowlist de campos que se envía al provider se define en 003, 004 y 005: esta
   spec no decide qué contexto se envía, solo cómo se transporta.
 
+## Mediciones y modelo en desarrollo
+
+- **Modelo usado en desarrollo:** `gemini-3.5-flash-lite` (familia Flash Lite),
+  configurado por entorno con `GENAI_MODEL`. No hay id por defecto en el repositorio.
+- **Smoke test del 2026-11-16**, en capa gratuita con prompts sintéticos: latencia
+  entre 817,0 ms y 1.461,3 ms en seis llamadas, sin errores, `finish_reason` `STOP` en
+  todas, español natural sin datos inventados y JSON válido. Detalle en `evidence.md`.
+- **Ninguna condición de revisión se activa** con estas mediciones:
+  1. Los precios y los límites no han cambiado respecto a lo evaluado el 2026-11-15.
+  2. El acceso a Azure sigue bloqueado en nuestra suscripción.
+  3. La latencia medida (máximo de 1,46 s) está muy por debajo del timeout de 15 s y
+     la calidad en español es la esperada, con un único defecto menor de espaciado:
+     no procede reevaluar OpenAI.
+  4. `generateContent` sigue siendo el endpoint documentado y en uso; no hay aviso de
+     deprecación en las llamadas.
+  5. El modelo elegido sigue disponible y no ha cambiado su política de datos.
+  6. El consumo se mantiene en la capa gratuita, sin gasto: no hay presión sobre el
+     presupuesto.
+- Queda pendiente de anotar el precio por millón de tokens de
+  `gemini-3.5-flash-lite` desde la fuente de precios, y de decidir el modelo de
+  producción cuando se cree el proyecto de pago (G09).
+
 ## Condiciones de revisión
 
 1. **Precios o límites** de Gemini cambian → reevaluar la matriz y confirmar que
