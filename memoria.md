@@ -1,6 +1,6 @@
 # Memoria del proyecto — TheHouse GenAI
 
-Última actualización: 2026-11-13
+Última actualización: 2026-11-16
 
 ## Identidad
 
@@ -22,7 +22,7 @@ Smart Match, no consulta propiedades y no contiene Mobile.
 | 008-testing | PLANNED | Estrategia completa y contract tests (transversal, cierra en G09) |
 | 009-ci-cd | PLANNED | Pipeline completo y despliegue futuro |
 | 010-integration-thehouse | PLANNED | Contratos y operación con Backend |
-| 011-llm-provider | PLANNED | Evaluación de proveedores y adaptador real detrás del puerto |
+| 011-llm-provider | IMPLEMENTED | Evaluación de proveedores y adaptador real detrás del puerto |
 
 ## Mapeo de fases
 
@@ -30,7 +30,7 @@ Smart Match, no consulta propiedades y no contiene Mobile.
 | --- | --- | --- |
 | G01 | 001-foundation | Servicio base, health, configuración, CI (IMPLEMENTED) |
 | G02 | 002-provider-abstraction | Puerto LLM, DTOs, errores, fake y factory, 100% offline (IMPLEMENTED) |
-| G03 | 011-llm-provider | Evaluación de proveedores y adaptador real |
+| G03 | 011-llm-provider | Evaluación de proveedores y adaptador real (IMPLEMENTED) |
 | G04 | 003-smart-match-explanation | Endpoint explain-match con auth mínima de servicio |
 | G05 | 005-security | Endurecimiento de seguridad, PII, prompt injection |
 | G06 | 006-moderation | Moderación de contenido |
@@ -45,11 +45,15 @@ cobertura) se acumulan en cada fase y la spec se cierra en G09, junto con
 
 ## Spec activa
 
-Ninguna. `002-provider-abstraction` pasó a `IMPLEMENTED` el 2026-11-13 con sus
-criterios verificados y la evidencia registrada en
-`specs/002-provider-abstraction/evidence.md`. La siguiente spec en orden es
-`011-llm-provider` (G03), que se activa en su propia rama cuando se apruebe su plan.
-Solo una spec puede estar `ACTIVE` a la vez.
+Ninguna. `011-llm-provider` (G03) pasó a `IMPLEMENTED` el 2026-11-16 con sus
+criterios verificados, los gates en verde y la evidencia registrada en
+`specs/011-llm-provider/evidence.md`, incluido el smoke test manual ejecutado con
+una credencial real el 2026-11-16. `001-foundation` y `002-provider-abstraction`
+permanecen `IMPLEMENTED` y el resto de specs, `PLANNED`. Solo una spec puede estar
+`ACTIVE` a la vez.
+
+La siguiente spec en orden es `003-smart-match-explanation` (G04), que se activa en
+su propia rama cuando se apruebe su plan.
 
 ## Enmiendas de la constitución
 
@@ -134,6 +138,68 @@ los valida y la factory solo admite `fake`; 011 los consume en el adaptador real
 - D-15: las decisiones quedan documentadas en la spec activa; no hay plan fuera del
   repositorio.
 
+## Decisiones tomadas en 011
+
+Proveedor elegido: **Gemini API (Google AI Studio)**, familia Flash, por REST con
+`httpx` y sin SDK nuevo. El id del modelo se fija con `GENAI_MODEL` y no se
+hardcodea en el código. La matriz comparativa y las fuentes están en
+`specs/011-llm-provider/evaluation.md`; el documento de decisión completo, en
+`specs/011-llm-provider/decision.md`.
+
+- D-1: el `400` del vendor se mapea a `ProviderInvalidResponseError`; no se crean
+  clases nuevas en `providers/base.py` ni se modifica la taxonomía de 002.
+- D-2: el `404` (modelo inexistente) se mapea también a `ProviderInvalidResponseError`,
+  por ser un fallo no reintentable de configuración.
+- D-3: el timeout de `httpx` es igual a `GENAI_TIMEOUT_SECONDS`, además del timeout
+  total que aplica `GuardedProvider`; ambos caminos terminan en
+  `ProviderTimeoutError`.
+- D-4: la allowlist del logging JSON amplía con `provider`, `provider_model`,
+  `error_code`, `duration_ms`, `prompt_chars` y `completion_chars`. Nunca se
+  registra contenido: ni prompts, ni respuestas, ni cabeceras.
+- D-5: el adaptador vive en `src/thehouse_genai/providers/gemini.py`.
+- D-6: el cliente `httpx` se crea por llamada; no hay cliente compartido ni ciclo de
+  vida que cerrar.
+- D-7: `temperature` se envía siempre, aunque algunas familias de Gemini lo ignoren;
+  el smoke test registra las cabeceras de deprecación que devuelva el vendor.
+- D-8: el smoke test de 011 (bloque B8) se ejecuta en la capa gratuita con prompts
+  sintéticos. El proyecto de pago con tope de gasto se crea antes de la demo con
+  datos reales, en la fase G09.
+- D-9: no hay modelo por defecto en el repositorio; `GENAI_MODEL` vacío significa
+  "no configurado" y es un error si el proveedor es `gemini`.
+- D-10: `GENAI_TIMEOUT_SECONDS` mantiene el valor por defecto de 15 s.
+- D-11: el adaptador no valida que el JSON devuelto parsea; el puerto devuelve texto y
+  el esquema de negocio lo validan 003 y 004.
+- D-12: la spec no se cierra como `IMPLEMENTED` sin un smoke test real ejecutado y
+  registrado en `evidence.md`.
+- D-13: la factory incorpora `ProviderConfigurationError`, subclase de `ValueError`
+  ajena a la taxonomía, para credencial o modelo ausentes con proveedor `gemini`.
+- D-14: `GENAI_PROVIDER` sin definir sigue lanzando `UnsupportedProviderError`; no
+  hay proveedor por defecto.
+- D-15: `GENAI_API_KEY` y `GENAI_MODEL` vacíos o con solo espacios se normalizan a
+  `None` (se cierra la deuda de 002); con `GENAI_PROVIDER=gemini` ambos son
+  obligatorios al arrancar y el mensaje de error nunca incluye el valor de la
+  credencial.
+- D-16: el adaptador registra `provider.call.completed` y `provider.call.failed` con
+  `provider`, `provider_model`, `error_code`, `duration_ms`, `prompt_chars` y
+  `completion_chars`; nunca el prompt, la respuesta, las cabeceras ni la credencial.
+  El estado HTTP se inspecciona antes de parsear el cuerpo, de modo que la página de
+  error del vendor nunca llega a una excepción ni a un log.
+- D-17: la presencia de una cabecera de deprecación del vendor se señala con un
+  registro propio (`provider.call.deprecation`), sin volcar ni el nombre ni el valor
+  de la cabecera; el detalle lo verá el script de smoke test (B7).
+- D-18: la factory admite `fake` y `gemini`; el proveedor real se construye como
+  `GuardedProvider(GeminiProvider(...))` con el timeout y el límite de entrada de
+  `Settings`. `ProviderConfigurationError`, subclase de `ValueError` ajena a la
+  taxonomía, cubre la credencial o el modelo ausentes o inválidos: es un fallo de
+  configuración, no de una llamada.
+- D-19: `scripts/smoke_provider.py` es una utilidad manual opt-in: si la variable
+  `CI` está activa sale con código 2 sin hacer nada; si no, exige `--i-have-a-real-key`
+  o `GENAI_SMOKE=1` y una confirmación escrita (`SI`, o `--yes` para omitirla). No
+  imprime la credencial, solo su longitud, y solo usa el puerto del proveedor.
+- D-20: los scripts pueden usar el paquete (incluida la factory), pero no importar
+  clientes HTTP ni SDKs de proveedor: el barrido de fronteras los cubre. El paquete
+  publica `py.typed` para que `mypy --strict` pueda comprobar los scripts.
+
 ## Evidencia resumida
 
 ### 001-foundation
@@ -153,22 +219,47 @@ los valida y la factory solo admite `fake`; 011 los consume en el adaptador real
 - Rama `feature/provider-abstraction`: 6 commits, uno por bloque de implementación.
 - Evidencia completa en `specs/002-provider-abstraction/evidence.md`.
 
+### 011-llm-provider
+
+- `ruff check .`: sin hallazgos.
+- `mypy src`: sin errores (strict) en 19 archivos.
+- `mypy --strict scripts/smoke_provider.py`: sin errores.
+- `pytest`: 279 tests aprobados (102 en `test_providers.py`, 57 en
+  `test_provider_adapter.py`, 53 en `test_import_boundaries.py`, 33 en `test_config.py`,
+  17 en `test_provider_factory.py`, 8 en `test_smoke_script.py`, 5 en `test_errors.py` y
+  4 en `test_health.py`), con el guard de red activo.
+- Smoke test manual ejecutado el 2026-11-16 con `gemini-3.5-flash-lite` en capa
+  gratuita: seis llamadas sin errores, latencia entre 817.0 ms y 1461.3 ms, español
+  natural sin datos inventados y JSON válido.
+- Rama `feature/llm-provider`: 8 commits, uno por bloque.
+- Evidencia completa en `specs/011-llm-provider/evidence.md`.
+
 ## Deuda y pendientes
 
-- `GENAI_API_KEY=` y `GENAI_MODEL=` vacíos quedan como `SecretStr('')` y `''` en lugar
-  de `None`; se normalizan en 011.
-- `StarletteDeprecationWarning` de `TestClient` con `httpx`; se revisa en 008.
+- `GENAI_API_KEY=` y `GENAI_MODEL=` vacíos quedaban como `SecretStr('')` y `''` en lugar
+  de `None`; normalizados en 011, bloque B2.
+- `StarletteDeprecationWarning` de `TestClient` con `httpx`; se mantiene la deuda y se
+  revisa en 008.
 - El logging estructurado de las llamadas al proveedor (modelo, duración, `error_code`)
-  queda para 007.
-- Evaluar proveedores y construir el adaptador real detrás del puerto (011).
+  se inicia en 011 con la allowlist ampliada (D-4) y se completa en 007.
+- Usar contexto es-MX en los prompts reales de 003 y 004: moneda en MXN y formato de
+  fecha y hora UTTT. El smoke test de 011 no fija esta convención porque su objetivo
+  es medir latencia y calidad con datos sintéticos.
+- La confirmación interactiva de `scripts/smoke_provider.py` acepta «si» en minúsculas
+  porque normaliza a mayúsculas; no es un fallo, pero conviene decidir si se exige
+  mayúscula estricta.
+- El precio por millón de tokens del modelo de desarrollo
+  (`gemini-3.5-flash-lite`) queda por anotar desde la fuente de precios, y el modelo de
+  producción se decide cuando se cree el proyecto de pago (G09).
 - Contratos y guardrails de explicación (003) y parseo (004).
 - Auth mínima de servicio en 003; endurecimiento, PII y prompt injection en 005.
 - Moderación, observabilidad avanzada, contract tests e integración (006–010).
-- No hay despliegue ni credenciales reales configuradas.
+- No hay despliegue. Hay una credencial de desarrollo en el entorno local, fuera del
+  repositorio: la capa gratuita de Gemini se usa solo con prompts sintéticos.
 
 ## Próximo paso
 
-G03 = `011-llm-provider`: evaluar proveedores (precio, capa gratuita, latencia, salida
-JSON estructurada, calidad en español e integración en Python) y documentar la
-decisión **antes** de escribir el adaptador real, que irá detrás del mismo puerto
-`GenerativeAiProvider`. La spec se activa en su propia rama.
+G04 = `003-smart-match-explanation`: endpoint `explain-match` con autenticación mínima
+de servicio (`X-Service-Key`), sin alterar los hechos calculados por el Backend. La
+spec sigue `PLANNED`: se activa en su propia rama cuando su plan esté aprobado, y
+`004-natural-language-search` permanece `PLANNED` hasta que 003 cierre.

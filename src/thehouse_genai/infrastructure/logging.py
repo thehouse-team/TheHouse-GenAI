@@ -2,6 +2,10 @@
 
 Only safe request metadata is logged. Headers, bodies, tokens, API keys and other PII
 must never be passed as log fields.
+
+The provider block adds the call metadata of the LLM adapters: the provider, the
+internal model id, the error code, the duration and the lengths of the prompt and
+the completion. Lengths are metadata, never content.
 """
 
 from __future__ import annotations
@@ -18,6 +22,11 @@ _LOG_EXTRA_FIELDS = (
     "path",
     "status_code",
     "duration_ms",
+    "provider",
+    "provider_model",
+    "error_code",
+    "prompt_chars",
+    "completion_chars",
 )
 
 

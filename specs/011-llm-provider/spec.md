@@ -1,9 +1,11 @@
 # 011-llm-provider — Proveedor LLM real
 
-- **Estado:** PLANNED
+- **Estado:** IMPLEMENTED
 - **Depende de:** 002-provider-abstraction
 - **Habilita:** 003, 004
 - **Fecha de alta:** 2026-11-12
+- **Fecha de activación:** 2026-11-15
+- **Última revisión:** 2026-11-15
 
 ## Objetivo
 
@@ -82,5 +84,9 @@ proveedor, con criterios objetivos de selección y sin acoplar la aplicación al
 
 ## Fuera de esta spec
 
-Esta spec permanece `PLANNED` hasta que sea su turno. No se activa hasta que el plan esté
-aprobado y exista una decisión de proveedor documentada.
+Esta spec está `ACTIVE` desde 2026-11-15 en la rama `feature/llm-provider`, con su
+plan aprobado y la decisión de proveedor documentada en `decision.md`. Se cerrará como
+`IMPLEMENTED` cuando sus criterios de aceptación estén verificados, la evidencia
+registrada en `evidence.md` y el smoke test manual se haya ejecutado con una
+credencial real. Hasta entonces, `003-smart-match-explanation` y
+`004-natural-language-search` permanecen `PLANNED`.
