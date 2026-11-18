@@ -317,6 +317,58 @@ def test_all_pruned_filters_give_generated_false_and_low(
     assert caplog.records[-1].pruned_fields == "max_budget"
 
 
+@pytest.mark.parametrize(
+    ("services", "query", "expected"),
+    [
+        (["Internet"], "Busco con internet", ["internet"]),
+        (["WiFi"], "Busco con wifi", ["internet"]),
+        (["baño_privado"], "Busco con baño privado", ["baño privado"]),
+        (["internet", "internet"], "Busco con internet", ["internet"]),
+        (["internet", "intenet"], "Busco con internet", ["internet"]),
+    ],
+)
+def test_model_services_are_normalized_and_only_invalid_are_pruned(
+    services: list[str], query: str, expected: list[str]
+) -> None:
+    provider = FakeProvider(text=_completion({"essentialServices": services}))
+
+    response = _run(provider, request=_request(query))
+
+    assert response.filters.essential_services == expected
+    assert response.generated is True
+    if len(services) != len(expected):
+        registry = MetricsRegistry()
+        _run(FakeProvider(text=_completion({"essentialServices": services})),
+             request=_request(query), metrics=registry)
+        assert (
+            _count(registry, MetricName.PARSE_SEARCH_PRUNED_FIELDS_TOTAL,
+                   field="essential_services") == 1
+        )
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"filters": {"essentialServices": ["internet"]}, "confidence": "high"},
+        {"filters": {"essentialServices": "internet"}},
+        {"filters": {"maxBudget": "3000"}},
+        {"filters": {"essentialServices": ["a" * 41]}},
+        {"filters": {"essentialServices": ["a"] * 21}},
+        {"filters": {"unexpected": 1}},
+    ],
+)
+def test_raw_completion_rejects_extra_fields_and_wrong_types(
+    payload: dict[str, Any], caplog: pytest.LogCaptureFixture
+) -> None:
+    caplog.set_level(logging.DEBUG)
+
+    response = _run(FakeProvider(text=json.dumps(payload, ensure_ascii=False)))
+
+    assert response.generated is False
+    assert response.confidence is SearchConfidence.LOW
+    assert caplog.records[-1].fallback_reason == "INVALID_JSON"
+
+
 def test_confidence_is_never_taken_from_the_model() -> None:
     provider = FakeProvider(text=_completion({"university": "UTTT"}))
 

@@ -337,8 +337,59 @@ class ParseSearchRequest(BaseModel):
         return f"query: {safe_query}\nlocale: {self.locale}"
 
 
-class ParseSearchCompletion(BaseModel):
+class RawSearchFilters(BaseModel):
+    """Untrusted proposal from the model, before evidence-based pruning.
+
+    This layer checks shape only: closed objects, strict JSON types and bounded sizes.
+    It deliberately has no closed service vocabulary and no duplicate rule; those are
+    guardrail decisions applied in ``domain/search_guardrails.py``.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True, populate_by_name=True)
+
+    max_budget: Decimal | None = Field(
+        default=None, alias="maxBudget", ge=0, le=_MAX_BUDGET, max_digits=12, decimal_places=2,
+        strict=False,
+    )
+    currency: Literal["MXN"] | None = None
+    university: str | None = Field(default=None, min_length=1, max_length=_MAX_UNIVERSITY_CHARS)
+    essential_services: list[str] = Field(
+        default_factory=list, alias="essentialServices", max_length=20
+    )
+    pets_allowed: bool | None = Field(default=None, alias="petsAllowed")
+    max_distance_km: Decimal | None = Field(
+        default=None, alias="maxDistanceKm", ge=0, le=_MAX_DISTANCE_KM, max_digits=5,
+        decimal_places=2, strict=False,
+    )
+
+    @field_validator("max_budget", "max_distance_km", mode="before")
+    @classmethod
+    def _numbers_are_json_numbers(cls, value: object) -> object:
+        """Reject strings and booleans even though Pydantic would coerce them."""
+
+        if isinstance(value, (str, bool)):
+            raise ValueError("number expected")
+        return value
+
+    @field_validator("essential_services")
+    @classmethod
+    def _service_strings_are_bounded(cls, value: list[str]) -> list[str]:
+        for service in value:
+            if len(service) > 40 or any(is_control(char) for char in service):
+                raise ValueError("invalid service string")
+        return value
+
+
+class RawParseSearchCompletion(BaseModel):
     """The only completion shape accepted from the model: filters and nothing else."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    filters: RawSearchFilters
+
+
+class ParseSearchCompletion(BaseModel):
+    """Strict final output model: the validated filters returned to Backend."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 

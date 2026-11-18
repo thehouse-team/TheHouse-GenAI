@@ -8,10 +8,15 @@ can be logged and counted as bounded labels (spec 004, D7 and D10).
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from enum import StrEnum
+from typing import Final
 
+from thehouse_genai.domain.moderation import normalize_text
 from thehouse_genai.domain.search_filters import (
+    SERVICE_VOCABULARY,
+    RawSearchFilters,
     SearchConfidence,
     SearchFilters,
     chosen_budget,
@@ -24,6 +29,29 @@ from thehouse_genai.domain.search_filters import (
 )
 
 _MAX_SERVICES: int = 8
+_SERVICE_SEPARATORS: Final[re.Pattern[str]] = re.compile(r"[\s_\-]+")
+_CANONICAL_SERVICES: Final[dict[str, str]] = {
+    normalize_text(service): service for service in SERVICE_VOCABULARY
+}
+_SERVICE_SYNONYMS: Final[dict[str, str]] = {
+    "wifi": "internet",
+    "wi fi": "internet",
+    "internet inalambrico": "internet",
+    "internet inalambrica": "internet",
+    "cochera": "estacionamiento",
+    "parqueo": "estacionamiento",
+    "bano propio": "baño privado",
+}
+
+
+def _canonical_service(value: str) -> str | None:
+    """Fold a proposed service to a canonical term, or None when it is unknown."""
+
+    normalized = _SERVICE_SEPARATORS.sub(" ", normalize_text(value)).strip()
+    synonym = _SERVICE_SYNONYMS.get(normalized)
+    if synonym is not None:
+        return synonym
+    return _CANONICAL_SERVICES.get(normalized)
 
 
 class PrunedField(StrEnum):
@@ -50,7 +78,9 @@ class GuardrailResult:
     has_other_currency: bool
 
 
-def apply_guardrails(candidate: SearchFilters, query: str) -> GuardrailResult:
+def apply_guardrails(
+    candidate: SearchFilters | RawSearchFilters, query: str
+) -> GuardrailResult:
     """Keep only the filters backed by the query and compute confidence locally."""
 
     evidence = extract_money_evidence(query)
@@ -80,10 +110,18 @@ def apply_guardrails(candidate: SearchFilters, query: str) -> GuardrailResult:
         university = None
         pruned.append(PrunedField.UNIVERSITY)
 
-    kept_services = {
-        service for service in candidate.essential_services if service in mentioned_services
-    }
-    if len(kept_services) != len(candidate.essential_services):
+    kept_services: set[str] = set()
+    services_pruned = False
+    for proposed in candidate.essential_services:
+        canonical = _canonical_service(proposed)
+        if canonical is None or canonical not in mentioned_services:
+            services_pruned = True
+            continue
+        if canonical in kept_services:
+            services_pruned = True
+            continue
+        kept_services.add(canonical)
+    if services_pruned:
         pruned.append(PrunedField.ESSENTIAL_SERVICES)
     services = sorted(kept_services)[:_MAX_SERVICES]
 

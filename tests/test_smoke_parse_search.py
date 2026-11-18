@@ -112,3 +112,186 @@ def test_no_test_imports_the_smoke_script() -> None:
             offenders.append(path.relative_to(REPO_ROOT).as_posix())
 
     assert offenders == []
+
+
+_FAILING_PROVIDER_SETUP = """
+from thehouse_genai.infrastructure.config import Settings
+from thehouse_genai.providers.base import ProviderUnavailableError
+
+class _FailingProvider:
+    async def generate(self, request):
+        logging.getLogger("thehouse_genai.providers.gemini").warning(
+            "provider.call.failed",
+            extra={
+                "error_code": "PROVIDER_UNAVAILABLE",
+                "vendor_detail": "DETALLE_PROHIBIDO_123",
+            },
+        )
+        raise ProviderUnavailableError()
+
+mod.build_provider = lambda settings: _FailingProvider()
+mod._load_settings = lambda: Settings(
+    _env_file=None, app_env="test", genai_provider="fake"
+)
+"""
+
+
+_INVALID_JSON_SETUP = """
+from thehouse_genai.infrastructure.config import Settings
+from thehouse_genai.providers.base import GenerativeAiResponse, GenerativeAiUsage
+
+class _InvalidJsonProvider:
+    async def generate(self, request):
+        text = (
+            "Resultado: " + chr(96) * 3 + "json" + chr(10)
+            + '{"filters": {"essentialServices": "internet", "extraKey": 1}, "confidence": "high"}'
+            + chr(10) + chr(96) * 3
+        )
+        return GenerativeAiResponse(
+            text=text,
+            usage=GenerativeAiUsage(input_tokens=1, output_tokens=1),
+        )
+
+mod.build_provider = lambda settings: _InvalidJsonProvider()
+mod._load_settings = lambda: Settings(
+    _env_file=None, app_env="test", genai_provider="fake"
+)
+"""
+
+
+def _run_with_fake(
+    setup: str, *args: str, ci: str = ""
+) -> subprocess.CompletedProcess[str]:
+    """Run the script with an offline provider, without importing it in the suite."""
+
+    wrapper = (
+        "import importlib.util, logging, sys\n"
+        "from pathlib import Path\n"
+        f"ROOT = Path({str(REPO_ROOT)!r})\n"
+        "spec = importlib.util.spec_from_file_location(\n"
+        "    'smoke_parse_search', ROOT / 'scripts' / 'smoke_parse_search.py'\n"
+        ")\n"
+        "mod = importlib.util.module_from_spec(spec)\n"
+        "sys.modules['smoke_parse_search'] = mod\n"
+        "spec.loader.exec_module(mod)\n"
+        f"{setup}\n"
+        f"raise SystemExit(mod.main({list(args)!r}))\n"
+    )
+    env = {**os.environ, "CI": ci}
+    env.pop("GENAI_SMOKE", None)
+    return subprocess.run(  # noqa: S603 - static interpreter, offline wrapper
+        [sys.executable, "-c", wrapper],
+        capture_output=True,
+        text=True,
+        check=False,
+        cwd=REPO_ROOT,
+        env=env,
+    )
+
+
+def test_help_documents_the_error_stop_option() -> None:
+    result = _run_script("--help", ci="")
+
+    assert result.returncode == 0
+    assert "--stop-after-errors" in result.stdout
+
+
+def test_failure_reports_bounded_code_and_fallback_reason() -> None:
+    result = _run_with_fake(
+        _FAILING_PROVIDER_SETUP,
+        "--i-have-a-real-key",
+        "--yes",
+        "--limit",
+        "1",
+        "--delay",
+        "0",
+        "--stop-after-errors",
+        "1",
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "codigo=PROVIDER_UNAVAILABLE" in result.stdout
+    assert "fallback_reason=PROVIDER_ERROR" in result.stdout
+    assert "| error de proveedor PROVIDER_UNAVAILABLE | 1 |" in result.stdout
+    assert "| fallback PROVIDER_ERROR | 1 |" in result.stdout
+    assert "Detenido: 1 fallos de proveedor consecutivos." in result.stdout
+    assert "provider.call.failed" not in result.stdout
+    assert "parse_search.fallback" not in result.stdout
+    assert "DETALLE_PROHIBIDO_123" not in result.stdout
+
+
+def test_default_stop_after_three_consecutive_errors() -> None:
+    result = _run_with_fake(
+        _FAILING_PROVIDER_SETUP,
+        "--i-have-a-real-key",
+        "--yes",
+        "--limit",
+        "6",
+        "--delay",
+        "0",
+    )
+
+    assert result.returncode == 0
+    for case_id in ("ps-01", "ps-02", "ps-03"):
+        assert case_id in result.stdout
+    assert "ps-04" not in result.stdout
+    assert "Detenido: 3 fallos de proveedor consecutivos." in result.stdout
+
+
+def test_only_runs_the_requested_case() -> None:
+    result = _run_with_fake(
+        _FAILING_PROVIDER_SETUP,
+        "--i-have-a-real-key",
+        "--yes",
+        "--only",
+        "ps-04",
+        "--delay",
+        "0",
+        "--stop-after-errors",
+        "1",
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "ps-04:" in result.stdout
+    assert "ps-01:" not in result.stdout
+    assert "| casos totales | 1 |" in result.stdout
+
+
+def test_diagnose_reports_types_and_keys_for_invalid_json() -> None:
+    result = _run_with_fake(
+        _INVALID_JSON_SETUP,
+        "--i-have-a-real-key",
+        "--yes",
+        "--only",
+        "ps-01",
+        "--delay",
+        "0",
+        "--diagnose",
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "diagnostico INVALID_JSON" in result.stdout
+    assert "filters.essentialServices: list_type" in result.stdout
+    assert "filters.extraKey: extra_forbidden" in result.stdout
+    assert "claves raiz: filters=object, confidence=string" in result.stdout
+    assert "claves filters: essentialServices=string, extraKey=number" in result.stdout
+    assert "envuelto_en_texto=si | bloque_de_codigo=si" in result.stdout
+    assert "Resultado:" not in result.stdout
+    assert '{"filters"' not in result.stdout
+    assert "parse_search.fallback" not in result.stdout
+
+
+def test_diagnose_is_silent_for_non_json_failures() -> None:
+    result = _run_with_fake(
+        _FAILING_PROVIDER_SETUP,
+        "--i-have-a-real-key",
+        "--yes",
+        "--only",
+        "ps-01",
+        "--delay",
+        "0",
+        "--diagnose",
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "diagnostico INVALID_JSON" not in result.stdout

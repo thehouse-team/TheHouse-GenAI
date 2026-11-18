@@ -26,9 +26,9 @@ from thehouse_genai.application.metrics_port import (
 )
 from thehouse_genai.domain.moderation import ModerationDecision, classify, redact_pii
 from thehouse_genai.domain.search_filters import (
-    ParseSearchCompletion,
     ParseSearchRequest,
     ParseSearchResponse,
+    RawParseSearchCompletion,
     SearchConfidence,
     empty_filters,
 )
@@ -166,7 +166,7 @@ class ParseSearch:
         self._record_provider_success(completion.usage)
 
         try:
-            payload = ParseSearchCompletion.model_validate_json(completion.text)
+            payload = RawParseSearchCompletion.model_validate_json(completion.text)
         except ValidationError:
             return self._fallback("INVALID_JSON")
 

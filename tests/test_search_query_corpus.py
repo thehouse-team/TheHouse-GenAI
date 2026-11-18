@@ -66,6 +66,26 @@ def test_expected_filters_survive_the_guardrails(case: dict[str, Any]) -> None:
     assert body["promptVersion"] == PARSE_SEARCH_PROMPT_VERSION
 
 
+def test_ps_03_misspelled_service_is_pruned_not_rejected() -> None:
+    """A bad service label must not discard the rest of a grounded completion."""
+
+    case = next(item for item in _corpus()["cases"] if item["id"] == "ps-03")
+    filters = dict(case["expectedFilters"])
+    filters["essentialServices"] = ["internet", "intenet"]
+    completion = json.dumps({"filters": filters}, ensure_ascii=False)
+
+    response = asyncio.run(
+        ParseSearch(FakeProvider(text=completion)).execute(
+            ParseSearchRequest.model_validate({"query": case["query"]})
+        )
+    )
+    body = response.model_dump(mode="json", by_alias=True)
+
+    assert body["filters"] == case["expectedFilters"]
+    assert body["confidence"] == "medium"
+    assert body["generated"] is True
+
+
 def _empty_filters() -> dict[str, object]:
     """Return the canonical empty filter set for the generated-flag assertion."""
 
