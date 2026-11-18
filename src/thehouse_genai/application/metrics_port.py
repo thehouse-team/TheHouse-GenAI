@@ -63,6 +63,7 @@ class EndpointPath(StrEnum):
     LIVE = "/health/live"
     READY = "/health/ready"
     EXPLAIN_MATCH = "/api/v1/generative/explain-match"
+    PARSE_SEARCH = "/api/v1/generative/parse-search"
     METRICS = "/internal/metrics"
     HEALTH_DETAIL = "/internal/health/detail"
     OTHER = "other"

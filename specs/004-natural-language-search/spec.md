@@ -71,8 +71,9 @@ redactan correos, teléfonos y URLs **antes** de enviarla al proveedor.
 - **RF-02:** `filters` contiene exactamente `maxBudget`, `currency`, `university`,
   `essentialServices`, `petsAllowed` y `maxDistanceKm` (ajuste 1). `extra="forbid"`
   rechaza cualquier campo de propiedad o resultado de búsqueda.
-- **RF-03:** `maxBudget` es `Decimal | null` ≥ 0, ≤ 2 decimales y ≤ 1,000,000. Solo se
-  emite si hay dinero explícito en la query: `$3,000`, `3 mil`, `3k`, `3.5 mil`,
+- **RF-03:** `maxBudget` es `Decimal | null` internamente (≥ 0, ≤ 2 decimales y
+  ≤ 1,000,000) y número JSON en el alambre, nunca string. Solo se emite si hay dinero
+  explícito en la query: `$3,000`, `3 mil`, `3k`, `3.5 mil`,
   `menos de 3000`, `hasta 3 mil`, `presupuesto de 3000`. `2026`, `1.3 km` y un teléfono
   de 10 dígitos no son dinero.
 - **RF-04:** `currency` es `null` o `"MXN"` (D4). Es `null` sin dinero y `"MXN"` cuando
@@ -90,8 +91,9 @@ redactan correos, teléfonos y URLs **antes** de enviarla al proveedor.
 - **RF-07:** `petsAllowed` solo se emite como `true` ante mención positiva de mascotas;
   las menciones negativas ("sin mascotas", "no acepto mascotas") dejan el filtro en
   `null` (D5).
-- **RF-08:** `maxDistanceKm` es `Decimal | null` ≥ 0 y ≤ 100. Solo se emite ante un
-  número seguido de `km`, `kms`, `kilómetro(s)`. Minutos y cuadras no se convierten
+- **RF-08:** `maxDistanceKm` es `Decimal | null` internamente (≥ 0 y ≤ 100) y número
+  JSON en el alambre (con decimales cuando los tiene), nunca string. Solo se emite ante
+  un número seguido de `km`, `kms`, `kilómetro(s)`. Minutos y cuadras no se convierten
   (ajuste 1). `3 km` es distancia; `3k` es dinero.
 - **RF-09:** "entre 2000 y 3000" produce `maxBudget=3000` (tope del rango) y la
   confianza no supera `medium` (ajuste 3).
@@ -192,6 +194,10 @@ Salida:
   "promptVersion": "parse_search_v1"
 }
 ```
+
+`maxBudget` y `maxDistanceKm` viajan como números JSON (`int` o `float`, según tengan
+decimales) o `null`; nunca como strings. Internamente el servicio conserva `Decimal`
+para no perder exactitud. Backend los lee como decimal con `System.Text.Json`.
 
 ## Fallback
 

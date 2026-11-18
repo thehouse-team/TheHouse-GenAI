@@ -11,7 +11,9 @@ from thehouse_genai.api.rate_limit import enforce_rate_limit
 from thehouse_genai.application.budget_port import DailyBudgetPort
 from thehouse_genai.application.explain_match import EXPLAIN_MATCH_PROMPT_VERSION, ExplainMatch
 from thehouse_genai.application.metrics_port import MetricsRecorder
+from thehouse_genai.application.parse_search import PARSE_SEARCH_PROMPT_VERSION, ParseSearch
 from thehouse_genai.domain.match_explanation import ExplainMatchRequest, ExplainMatchResponse
+from thehouse_genai.domain.search_filters import ParseSearchRequest, ParseSearchResponse
 from thehouse_genai.providers.base import GenerativeAiProvider
 from thehouse_genai.providers.moderation import ModerationProvider
 
@@ -49,5 +51,36 @@ async def explain_match(
     use_case: Annotated[ExplainMatch, Depends(_get_use_case)],
 ) -> ExplainMatchResponse:
     """Return a faithful explanation or a safe template fallback."""
+
+    return await use_case.execute(payload)
+
+
+def _get_parse_search_use_case(request: Request) -> ParseSearch:
+    """Bind the same startup ports as explain-match to the parse-search use case."""
+
+    provider: GenerativeAiProvider | None = request.app.state.provider
+    moderator: ModerationProvider = request.app.state.moderation_provider
+    metrics: MetricsRecorder = request.app.state.metrics
+    budget: DailyBudgetPort = request.app.state.budget
+    return ParseSearch(
+        provider,
+        moderator=moderator,
+        metrics=metrics,
+        budget=budget,
+        prompt_version=PARSE_SEARCH_PROMPT_VERSION,
+    )
+
+
+@router.post(
+    "/parse-search",
+    response_model=ParseSearchResponse,
+    response_model_by_alias=True,
+    summary="Parse a student query into grounded search filters",
+)
+async def parse_search(
+    payload: ParseSearchRequest,
+    use_case: Annotated[ParseSearch, Depends(_get_parse_search_use_case)],
+) -> ParseSearchResponse:
+    """Return validated filters or a safe empty fallback."""
 
     return await use_case.execute(payload)

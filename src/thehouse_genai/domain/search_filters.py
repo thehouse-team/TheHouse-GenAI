@@ -18,7 +18,7 @@ from decimal import Decimal, InvalidOperation
 from enum import StrEnum
 from typing import Final, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator
 
 from thehouse_genai.domain.moderation import normalize_text
 from thehouse_genai.domain.text_guard import escape_untrusted, is_control
@@ -270,6 +270,16 @@ class SearchFilters(BaseModel):
         default=None, alias="maxDistanceKm", ge=0, le=_MAX_DISTANCE_KM, max_digits=5,
         decimal_places=2,
     )
+
+    @field_serializer("max_budget", "max_distance_km", when_used="json")
+    def _numeric_filters_as_json_numbers(self, value: Decimal | None) -> int | float | None:
+        """Emit JSON numbers for Backend; the domain keeps exact Decimal values."""
+
+        if value is None:
+            return None
+        if value == value.to_integral_value():
+            return int(value)
+        return float(value)
 
     @field_validator("essential_services")
     @classmethod
