@@ -16,7 +16,7 @@ Smart Match, no consulta propiedades y no contiene Mobile.
 | 002-provider-abstraction | IMPLEMENTED | Puerto `GenerativeAiProvider`, DTOs, errores, fake y factory (offline) |
 | 003-smart-match-explanation | IMPLEMENTED | Explicación de match sin alterar hechos, con auth mínima de servicio |
 | 004-natural-language-search | PLANNED | Parseo de búsqueda a filtros, nunca propiedades |
-| 005-security | PLANNED | Autenticación de servicio endurecida, PII, prompt injection |
+| 005-security | ACTIVE | Autenticación de servicio endurecida, PII, prompt injection |
 | 006-moderation | PLANNED | Política y moderación de contenido |
 | 007-observability | PLANNED | Métricas, trazas, SLOs y alertas |
 | 008-testing | PLANNED | Estrategia completa y contract tests (transversal, cierra en G09) |
@@ -45,13 +45,17 @@ cobertura) se acumulan en cada fase y la spec se cierra en G09, junto con
 
 ## Spec activa
 
-Ninguna. `003-smart-match-explanation` (G04) se cerró como `IMPLEMENTED` el
-2026-11-17 con criterios verificados, gates en verde, 409 tests sin red y evidencia
-registrada en `specs/003-smart-match-explanation/evidence.md`, incluidas las pruebas
-reales con `gemini-3.5-flash-lite`. `011-llm-provider` (G03) pasó a `IMPLEMENTED` el
-2026-11-16 con sus criterios verificados, los gates en verde y la evidencia registrada
-en `specs/011-llm-provider/evidence.md`, incluido el smoke test manual ejecutado con
-una credencial real el 2026-11-16. `001-foundation` y `002-provider-abstraction`
+`005-security` (G05) está `ACTIVE` desde el 2026-11-17 con plan aprobado y rama
+`feature/security-hardening`. Endurece la autenticación de servicio de 003 sin
+rehacerla: rotación de clave, rate limiting en memoria, minimización de PII, corpus de
+prompt injection, headers de seguridad, logging de seguridad y escaneo en CI.
+`003-smart-match-explanation` (G04) se cerró como `IMPLEMENTED` el 2026-11-17 con
+criterios verificados, gates en verde, 409 tests sin red y evidencia registrada en
+`specs/003-smart-match-explanation/evidence.md`, incluidas las pruebas reales con
+`gemini-3.5-flash-lite`. `011-llm-provider` (G03) pasó a `IMPLEMENTED` el 2026-11-16 con
+sus criterios verificados, los gates en verde y la evidencia registrada en
+`specs/011-llm-provider/evidence.md`, incluido el smoke test manual ejecutado con una
+credencial real el 2026-11-16. `001-foundation`, `002-provider-abstraction` y 003
 permanecen `IMPLEMENTED` y el resto de specs, `PLANNED`. Solo una spec puede estar
 `ACTIVE` a la vez.
 
@@ -257,6 +261,31 @@ Ajustes obligatorios incorporados al diseño y a la spec:
 5. Servicios: rechazar solo caracteres de control y longitud > 40; sin regex
    restrictiva; delimitadores como `<untrusted_data>` se escapan en `to_context()`.
 
+## Decisiones tomadas en 005
+
+Plan aprobado el 2026-11-17. Decisiones D1–D12 registradas al activar la spec:
+
+| # | Decisión |
+| --- | --- |
+| D1 | Mantener la rama `feature/security-hardening` (ya creada) en lugar de renombrarla. |
+| D2 | mTLS queda fuera de 005: requiere TLS/certificados en despliegue. Se documenta para G09/G10. |
+| D3 | Identidad del rate limit: `sha256` truncado de la clave presentada, sin pepper; nunca la clave en claro ni IP/headers falsificables. |
+| D4 | Fixed window de 60 peticiones / 60 s, habilitado por defecto; `Retry-After` entero. |
+| D5 | Inyección en datos de entrada: se escapa y se registra como metadato seguro, nunca se rechaza; no altera el contrato con Backend. |
+| D6 | Normalización de salida: NFKC + tabla de confusables (cirílico/griego comunes: а, е, о, р, с, і, у, х…) + eliminación de caracteres de ancho cero. NFKC por sí solo no convierte cirílico a latino. |
+| D7 | Runbook como apéndice de `specs/005-security/spec.md`; no se crea `docs/`. |
+| D8 | GitHub secret scanning + push protection y Dependabot los configura el usuario en Settings (documentado). CI añade `pip-audit` con `continue-on-error`; no se usa gitleaks ni se añaden dependencias a `pyproject.toml`. |
+| D9 | Omitir HSTS y CSP en la aplicación; se deciden en despliegue (G09/G10). |
+| D10 | Si no hay clave actual, fallar cerrado aunque exista `GENAI_SERVICE_KEY_PREVIOUS`. |
+| D11 | Corpus de inyección versionado en `tests/fixtures/prompt_injection_corpus.json`. |
+| D12 | Los logs de 429 incluyen el fingerprint del cliente (hash truncado), nunca la clave. |
+
+El único cliente es Backend, así que el rate limit por cliente es efectivamente global
+para el tráfico legítimo. Gemini en capa gratuita limita ~15 RPM y el exceso termina en
+fallback 200 con `generated=false`; el rate limit de GenAI protege contra abuso si la
+clave se filtra, antes de consumir cuota del proveedor. Deuda para G09: caché de
+explicaciones en Backend y manejo del 429 como «sin explicación».
+
 ## Evidencia resumida
 
 ### 001-foundation
@@ -320,8 +349,11 @@ Ajustes obligatorios incorporados al diseño y a la spec:
   (`gemini-3.5-flash-lite`) queda por anotar desde la fuente de precios, y el modelo de
   producción se decide cuando se cree el proyecto de pago (G09).
 - Contratos y guardrails de parseo (004). Los de explicación (003) están cerrados.
-- Endurecimiento de auth, PII y prompt injection en 005; la auth mínima de 003 ya está
-  implementada.
+- `005-security` está activa en G05: rota la clave de servicio, limita por fingerprint,
+  fija la allowlist de PII, normaliza la salida contra homoglifos y registra 401/429.
+  La auth mínima de 003 ya está implementada; mTLS queda para G09/G10 (D2).
+- Deuda para G09 derivada del rate limit: caché de explicaciones en Backend y manejo del
+  429 como «sin explicación» (no como error de usuario).
 - Timeouts de producción (D18): `GENAI_TIMEOUT_SECONDS=6` en GenAI y 8 s en el cliente
   del Backend, pendiente de aplicar en G09/G10. El default de `Settings` sigue en 15 s
   y el pico real de 9639 ms queda registrado en la evidencia de 003.
@@ -338,9 +370,11 @@ Ajustes obligatorios incorporados al diseño y a la spec:
 
 ## Próximo paso
 
-G05 = `005-security`: endurecimiento de la autenticación de servicio, PII y defensa
-contra prompt injection más allá del mínimo de 003 (rotación, mTLS, rate limiting y
-filtrado de PII). Les siguen G06 (`006-moderation`), G07 (`007-observability`, donde se
-decide el readiness del proveedor), G08 (`004-natural-language-search`) y G09/G10, donde
-se aplican los timeouts de producción de D18. `004-natural-language-search` permanece
-`PLANNED`.
+G05 = `005-security` está en curso sobre `feature/security-hardening`: rotación de la
+clave de servicio, rate limiting por cliente en memoria, allowlist de PII, corpus
+versionado de prompt injection, headers de seguridad, logging de 401/429 y escaneo en
+CI. mTLS queda fuera y documentado para G09/G10 (D2). Les siguen G06 (`006-moderation`),
+G07 (`007-observability`, donde se decide el readiness del proveedor), G08
+(`004-natural-language-search`) y G09/G10, donde se aplican los timeouts de producción
+de D18 y se decide el despliegue (incluidos mTLS, HSTS/CSP y el rate limit global).
+`004-natural-language-search` permanece `PLANNED`.

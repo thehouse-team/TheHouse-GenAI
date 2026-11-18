@@ -7,7 +7,10 @@ estructurados. No calcula Smart Match, no consulta propiedades y no sustituye al
 ## Estado
 
 G01 Foundation, G02 (`002-provider-abstraction`), G03 (`011-llm-provider`) y G04
-(`003-smart-match-explanation`) implementados.
+(`003-smart-match-explanation`) implementados. G05 (`005-security`) está en curso:
+endurece la autenticación de servicio de 003 con rotación de clave, rate limiting,
+allowlist de PII, corpus de inyección y logging de seguridad, sin cambiar el contrato de
+`explain-match`.
 
 G02 define el puerto `GenerativeAiProvider`, sus DTOs inmutables, la taxonomía de
 errores, el guard central de timeout y límite de entrada, un `FakeProvider`
@@ -29,7 +32,11 @@ contrato de `explain-match` está aprobado con Backend y se implementa en G04;
 `POST /api/v1/generative/explain-match`. Requiere la cabecera `X-Service-Key` con el
 secreto compartido con Backend (configurado en `GENAI_SERVICE_KEY`); sin clave o con una
 clave inválida responde `401` con el sobre de error estándar. La autenticación se evalúa
-antes de validar el body.
+antes de validar el body. Durante la rotación se aceptan dos claves: la actual
+(`GENAI_SERVICE_KEY`) y la anterior (`GENAI_SERVICE_KEY_PREVIOUS`); si no hay clave
+actual, el servicio falla cerrado. El acceso se limita por cliente a 60 peticiones por
+minuto en memoria del proceso, con `429` y `Retry-After` al excederse. mTLS queda fuera
+de alcance y se decide en G09/G10.
 
 Request (camelCase, campos obligatorios salvo `locale` y las listas de servicios):
 
@@ -109,6 +116,7 @@ por REST con `httpx`. Su configuración es por entorno:
 | --- | --- | --- |
 | `GENAI_PROVIDER` | Sí | `fake` (doble de test, sin red) o `gemini` |
 | `GENAI_SERVICE_KEY` | Sí, para `explain-match` | Secreto compartido con Backend (`X-Service-Key`); `SecretStr`, nunca se registra |
+| `GENAI_SERVICE_KEY_PREVIOUS` | No | Clave anterior durante la rotación; deja de aceptarse al retirarla. Vacía o en blanco se normaliza a `None` |
 | `GENAI_API_KEY` | Con `gemini` | Credencial; se modela como `SecretStr` y nunca se registra |
 | `GENAI_MODEL` | Con `gemini` | Id del modelo; no hay valor por defecto en el repositorio |
 | `GENAI_TIMEOUT_SECONDS` | No | Timeout de la llamada; 15 s por defecto. En producción (G09/G10) usar 6 s y 8 s en el cliente de Backend (D18) |
