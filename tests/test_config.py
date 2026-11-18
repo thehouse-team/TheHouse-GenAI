@@ -241,3 +241,44 @@ def test_service_key_is_not_exposed_in_repr() -> None:
     assert "super-secret-service-key" not in repr(settings)
     assert settings.service_key is not None
     assert settings.service_key.get_secret_value() == "super-secret-service-key"
+
+
+def test_service_key_previous_defaults_to_none(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("GENAI_SERVICE_KEY_PREVIOUS", raising=False)
+
+    settings = Settings(_env_file=None)
+
+    assert settings.service_key_previous is None
+
+
+@pytest.mark.parametrize("value", ["", "   "])
+def test_blank_service_key_previous_is_none(value: str) -> None:
+    settings = Settings(_env_file=None, service_key_previous=value)
+
+    assert settings.service_key_previous is None
+
+
+def test_reads_service_key_previous_from_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("GENAI_SERVICE_KEY_PREVIOUS", "previous-service-key")
+
+    settings = Settings(_env_file=None)
+
+    assert settings.service_key_previous is not None
+    assert settings.service_key_previous.get_secret_value() == "previous-service-key"
+
+
+def test_generic_service_key_previous_env_is_ignored(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("GENAI_SERVICE_KEY_PREVIOUS", raising=False)
+    monkeypatch.setenv("SERVICE_KEY_PREVIOUS", "algo")
+
+    settings = Settings(_env_file=None)
+
+    assert settings.service_key_previous is None
+
+
+def test_service_key_previous_is_not_exposed_in_repr() -> None:
+    settings = Settings(_env_file=None, service_key_previous="super-secret-previous-key")
+
+    assert "super-secret-previous-key" not in repr(settings)
+    assert settings.service_key_previous is not None
+    assert settings.service_key_previous.get_secret_value() == "super-secret-previous-key"
