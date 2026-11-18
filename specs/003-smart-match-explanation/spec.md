@@ -214,13 +214,15 @@ esta plantilla neutra y factual, construida solo con datos estructurados del inp
 > Cuesta {priceMXN}, está a {distanceKm} km de la {university} y cuenta con {servicios}.
 
 `{priceMXN}` es el precio formateado en estilo es-MX con la moneda del input (por
-ejemplo `$2,800 MXN`). La cláusula de servicios se omite si la lista está vacía. La
-plantilla **no incluye `{title}`**: ese texto lo escribe el arrendador y puede traer
-PII, ofensas o inyección (observado en G04); por eso la plantilla solo contiene datos
-estructurados y la excepción de «la plantilla no se modera» queda justificada en 006
-(decisión A6). La coincidencia se atribuye a las preferencias del estudiante, **no** a
-la universidad. No se usa la frase «No se pudo generar…». El fallback no es un error
-para Backend y el contrato `{explanation, generated, promptVersion}` no cambia.
+ejemplo `$2,800 MXN`). La cláusula de servicios se omite si la lista está vacía. Desde
+006 (decisión A6, D19) la plantilla **no incluye `{title}` ni `{budgetMax}`**: el título
+es texto libre del arrendador y puede traer PII, ofensas o inyección (observado en G04),
+y el presupuesto es una preferencia del estudiante, no un dato de la propiedad. Así la
+plantilla queda reducida a los hechos estructurados de la entrada más el score, lo que
+justifica la excepción de «la plantilla no se modera» en 006. La coincidencia se atribuye
+a las preferencias del estudiante, **no** a la universidad. No se usa la frase
+«No se pudo generar…». El fallback no es un error para Backend y el contrato
+`{explanation, generated, promptVersion}` no cambia.
 
 ## Decisiones aprobadas
 

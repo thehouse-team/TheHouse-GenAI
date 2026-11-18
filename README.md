@@ -10,10 +10,10 @@ G01 Foundation, G02 (`002-provider-abstraction`), G03 (`011-llm-provider`), G04
 (`003-smart-match-explanation`) y G05 (`005-security`) implementados. G05 endurece la
 autenticación de servicio de 003 con rotación de clave, rate limiting, allowlist de PII,
 corpus de inyección, headers de seguridad y logging, sin cambiar el contrato de
-`explain-match`. G06 (`006-moderation`) está **ACTIVA** con alcance A: política local
-`moderation_v1`, puerto de moderación con fake y moderador determinista para la salida,
-y `safetySettings` en Gemini. Sin endpoint de contenido de usuarios y sin llamadas
-extra al proveedor.
+`explain-match`. G06 (`006-moderation`) quedó **IMPLEMENTADA** con alcance A: política
+local `moderation_v1`, puerto de moderación con fake y moderador determinista para la
+salida, y `safetySettings` en Gemini. Sin endpoint de contenido de usuarios y sin
+llamadas extra al proveedor.
 
 G02 define el puerto `GenerativeAiProvider`, sus DTOs inmutables, la taxonomía de
 errores, el guard central de timeout y límite de entrada, un `FakeProvider`

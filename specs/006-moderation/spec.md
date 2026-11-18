@@ -1,6 +1,6 @@
 # 006-moderation — Moderación de contenido
 
-- **Estado:** ACTIVE
+- **Estado:** IMPLEMENTED
 - **Depende de:** 002-provider-abstraction, 005-security, 011-llm-provider
 - **Habilita:** 010-integration-thehouse
 - **Fecha de alta:** 2026-11-08
@@ -94,7 +94,43 @@ fuera y se documenta como deuda para una spec nueva si el requisito académico l
   caracteres).
 - Separar la decisión de moderación de la generación para poder auditarla.
 - La plantilla de fallback no se modera porque se construye solo con datos estructurados
-  y validados por Backend; desde A6 tampoco incluye el título libre del arrendador.
+  y validados por Backend; desde A6 tampoco incluye el título libre del arrendador ni
+  el presupuesto.
+
+## Política moderation_v1
+
+| Señal detectada | Decisión | Motivo registrado |
+| --- | --- | --- |
+| Correo electrónico | `block` | `PII_EMAIL` |
+| Teléfono de 10 dígitos, con `+52` opcional | `block` | `PII_PHONE` |
+| URL con esquema (`http`/`https`) o prefijo `www.` | `block` | `URL_EXTERNAL` |
+| Término incluido en la lista `block` del léxico | `block` | `OFFENSIVE_LANGUAGE` |
+| Término incluido en la lista `review` del léxico | `review` | `OFFENSIVE_LANGUAGE` |
+| Texto sin estas señales, incluido el corpus benigno de rentas | `allow` | — |
+
+La coincidencia es por palabra completa e insensible a acentos y mayúsculas; la
+allowlist se aplica antes de buscar los términos, para no marcar palabras legítimas del
+contexto de rentas. La prioridad es `block > review > allow`.
+
+En G06 no hay canal de revisión humana: una decisión `block` o `review` degrada a la
+plantilla de fallback con motivo `MODERATION_BLOCKED` o `MODERATION_REVIEW`. La categoría
+`review` queda definida en la política para la opción B futura (A7), donde Backend no
+publicaría el contenido hasta la revisión.
+
+### Cómo se amplía el léxico
+
+El léxico es un archivo JSON de datos versionado, cargado por `load_lexicon()`, con
+`version`, `block`, `review` y `allowlist`. Para añadir términos se edita ese archivo en
+un PR: minúsculas, sin acentos, una sola palabra por término, sin solapamiento entre
+listas. `test_shipped_lexicon_is_well_formed` valida el formato y que las listas no estén
+vacías; `test_allowlist_suppresses_a_lexicon_match` cubre los falsos positivos. El
+código y los tests no contienen términos reales: usan solo tokens ficticios.
+
+### Responsable
+
+El equipo de TheHouse, como dueño del dominio de español de México, mantiene el léxico
+y revisa cada ampliación en PR. GenAI nunca añade términos automáticamente ni aprende
+del tráfico.
 
 ## Decisiones aprobadas
 
@@ -105,7 +141,7 @@ fuera y se documenta como deuda para una spec nueva si el requisito académico l
 | A3 | `safetySettings`: cuatro categorías centrales con umbral `BLOCK_MEDIUM_AND_ABOVE`, constante en `providers/gemini.py`, sin variable de entorno nueva. Refuerzo del proveedor, no mecanismo de moderación. |
 | A4 | Cero llamadas extra a Gemini. Sin modo híbrido en G06. |
 | A5 | RF-02 reformulada: se modera la salida por el puerto; la entrada sigue cubierta por 003/005 (escape y registro, sin rechazo). |
-| A6 | La plantilla de fallback no incluye el título de la propiedad: usa solo datos estructurados (score, precio con moneda, distancia, universidad y servicios). Contrato sin cambios. |
+| A6 | La plantilla de fallback no incluye el título de la propiedad ni el presupuesto: usa solo datos estructurados (score, precio con moneda, distancia, universidad y servicios). Contrato sin cambios. |
 | A7 | Decisión anticipada para la opción B: fail-closed = `review`, LLM solo con flag opt-in. Sin implementar en G06. |
 
 ## Fuera de esta spec

@@ -1,6 +1,6 @@
 # Plan — 006-moderation Moderación de contenido
 
-- **Estado:** ACTIVE
+- **Estado:** IMPLEMENTED
 - **Depende de:** 002-provider-abstraction, 005-security, 011-llm-provider
 - **Plan aprobado:** 2026-11-18
 - **Alcance aprobado:** A (salida generativa + `safetySettings`)
