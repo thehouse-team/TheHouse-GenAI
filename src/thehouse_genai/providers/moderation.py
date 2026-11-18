@@ -27,6 +27,8 @@ class ModerationField(StrEnum):
     """Bounded hints describing where the text came from."""
 
     GENERATED_EXPLANATION = "generated_explanation"
+    PARSE_SEARCH_QUERY = "parse_search_query"
+    PARSE_SEARCH_FILTERS = "parse_search_filters"
 
 
 class _ModerationModel(BaseModel):

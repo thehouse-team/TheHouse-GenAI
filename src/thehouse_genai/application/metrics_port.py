@@ -13,6 +13,8 @@ from enum import StrEnum
 from typing import Final, Protocol, runtime_checkable
 
 from thehouse_genai.domain.moderation import ModerationCategory, ModerationDecision
+from thehouse_genai.domain.search_filters import SearchConfidence
+from thehouse_genai.domain.search_guardrails import PrunedField
 
 SNAPSHOT_SCHEMA_VERSION: Final[str] = "1"
 LATENCY_BUCKETS_MS: Final[tuple[int, ...]] = (50, 100, 250, 500, 1000, 2000, 5000, 10000)
@@ -30,6 +32,10 @@ class MetricName(StrEnum):
     PROVIDER_ESTIMATED_COST = "provider_estimated_cost"
     EXPLAIN_MATCH_OUTCOMES_TOTAL = "explain_match_outcomes_total"
     EXPLAIN_MATCH_FALLBACKS_TOTAL = "explain_match_fallbacks_total"
+    PARSE_SEARCH_OUTCOMES_TOTAL = "parse_search_outcomes_total"
+    PARSE_SEARCH_CONFIDENCE_TOTAL = "parse_search_confidence_total"
+    PARSE_SEARCH_FALLBACKS_TOTAL = "parse_search_fallbacks_total"
+    PARSE_SEARCH_PRUNED_FIELDS_TOTAL = "parse_search_pruned_fields_total"
     MODERATION_DECISIONS_TOTAL = "moderation_decisions_total"
     MODERATION_CATEGORIES_TOTAL = "moderation_categories_total"
     AUTH_REJECTIONS_TOTAL = "auth_rejections_total"
@@ -133,6 +139,10 @@ class FallbackReason(StrEnum):
     MODERATION_UNAVAILABLE = "MODERATION_UNAVAILABLE"
     MODERATION_BLOCKED = "MODERATION_BLOCKED"
     MODERATION_REVIEW = "MODERATION_REVIEW"
+    INPUT_MODERATION_BLOCKED = "INPUT_MODERATION_BLOCKED"
+    INPUT_MODERATION_REVIEW = "INPUT_MODERATION_REVIEW"
+    EMPTY_QUERY_AFTER_REDACTION = "EMPTY_QUERY_AFTER_REDACTION"
+    ALL_FILTERS_PRUNED = "ALL_FILTERS_PRUNED"
     BUDGET_EXHAUSTED = "BUDGET_EXHAUSTED"
 
 
@@ -277,6 +287,8 @@ __all__ = [
     "ModerationCategory",
     "ModerationDecision",
     "ProviderErrorCode",
+    "PrunedField",
+    "SearchConfidence",
     "StatusClass",
     "StatusCode",
     "TokenDirection",

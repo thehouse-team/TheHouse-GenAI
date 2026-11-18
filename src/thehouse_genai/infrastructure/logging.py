@@ -31,6 +31,8 @@ _LOG_EXTRA_FIELDS = (
     "prompt_chars",
     "completion_chars",
     "generated",
+    "confidence",
+    "pruned_fields",
     "prompt_version",
     "fallback_reason",
     "reason",
@@ -99,6 +101,7 @@ def configure_logging(level: str = "INFO") -> None:
     for name in (
         "thehouse_genai.providers.gemini",
         "thehouse_genai.application.explain_match",
+        "thehouse_genai.application.parse_search",
     ):
         target = logging.getLogger(name)
         if not any(isinstance(item, RequestIdFilter) for item in target.filters):
