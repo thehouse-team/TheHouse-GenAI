@@ -200,3 +200,44 @@ def test_model_is_trimmed() -> None:
     settings = Settings(_env_file=None, genai_model="  gemini-3.8-flash  ")
 
     assert settings.genai_model == "gemini-3.8-flash"
+
+
+def test_service_key_defaults_to_none(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("GENAI_SERVICE_KEY", raising=False)
+
+    settings = Settings(_env_file=None)
+
+    assert settings.service_key is None
+
+
+@pytest.mark.parametrize("value", ["", "   "])
+def test_blank_service_key_is_none(value: str) -> None:
+    settings = Settings(_env_file=None, service_key=value)
+
+    assert settings.service_key is None
+
+
+def test_reads_service_key_from_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("GENAI_SERVICE_KEY", "test-service-key")
+
+    settings = Settings(_env_file=None)
+
+    assert settings.service_key is not None
+    assert settings.service_key.get_secret_value() == "test-service-key"
+
+
+def test_generic_service_key_env_is_ignored(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("GENAI_SERVICE_KEY", raising=False)
+    monkeypatch.setenv("SERVICE_KEY", "algo")
+
+    settings = Settings(_env_file=None)
+
+    assert settings.service_key is None
+
+
+def test_service_key_is_not_exposed_in_repr() -> None:
+    settings = Settings(_env_file=None, service_key="super-secret-service-key")
+
+    assert "super-secret-service-key" not in repr(settings)
+    assert settings.service_key is not None
+    assert settings.service_key.get_secret_value() == "super-secret-service-key"

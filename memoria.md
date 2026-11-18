@@ -1,6 +1,6 @@
 # Memoria del proyecto — TheHouse GenAI
 
-Última actualización: 2026-11-16
+Última actualización: 2026-11-17
 
 ## Identidad
 
@@ -14,7 +14,7 @@ Smart Match, no consulta propiedades y no contiene Mobile.
 | --- | --- | --- |
 | 001-foundation | IMPLEMENTED | Servicio mínimo, health, config, seguridad base, tests, CI |
 | 002-provider-abstraction | IMPLEMENTED | Puerto `GenerativeAiProvider`, DTOs, errores, fake y factory (offline) |
-| 003-smart-match-explanation | PLANNED | Explicación de match sin alterar hechos, con auth mínima de servicio |
+| 003-smart-match-explanation | IMPLEMENTED | Explicación de match sin alterar hechos, con auth mínima de servicio |
 | 004-natural-language-search | PLANNED | Parseo de búsqueda a filtros, nunca propiedades |
 | 005-security | PLANNED | Autenticación de servicio endurecida, PII, prompt injection |
 | 006-moderation | PLANNED | Política y moderación de contenido |
@@ -45,15 +45,15 @@ cobertura) se acumulan en cada fase y la spec se cierra en G09, junto con
 
 ## Spec activa
 
-Ninguna. `011-llm-provider` (G03) pasó a `IMPLEMENTED` el 2026-11-16 con sus
-criterios verificados, los gates en verde y la evidencia registrada en
-`specs/011-llm-provider/evidence.md`, incluido el smoke test manual ejecutado con
+Ninguna. `003-smart-match-explanation` (G04) se cerró como `IMPLEMENTED` el
+2026-11-17 con criterios verificados, gates en verde, 409 tests sin red y evidencia
+registrada en `specs/003-smart-match-explanation/evidence.md`, incluidas las pruebas
+reales con `gemini-3.5-flash-lite`. `011-llm-provider` (G03) pasó a `IMPLEMENTED` el
+2026-11-16 con sus criterios verificados, los gates en verde y la evidencia registrada
+en `specs/011-llm-provider/evidence.md`, incluido el smoke test manual ejecutado con
 una credencial real el 2026-11-16. `001-foundation` y `002-provider-abstraction`
 permanecen `IMPLEMENTED` y el resto de specs, `PLANNED`. Solo una spec puede estar
 `ACTIVE` a la vez.
-
-La siguiente spec en orden es `003-smart-match-explanation` (G04), que se activa en
-su propia rama cuando se apruebe su plan.
 
 ## Enmiendas de la constitución
 
@@ -200,6 +200,63 @@ hardcodea en el código. La matriz comparativa y las fuentes están en
   clientes HTTP ni SDKs de proveedor: el barrido de fronteras los cubre. El paquete
   publica `py.typed` para que `mypy --strict` pueda comprobar los scripts.
 
+## Decisiones tomadas en 003
+
+Plan aprobado el 2026-11-17. Contrato alineado con el borrador que Backend ya revisa.
+
+- D-1: contrato HTTP camelCase con aliases sobre modelos Python snake_case y
+  `extra="forbid"`. Nombres: `matchScore`, `distanceKm`, `budgetMax`,
+  `essentialServices`, `maxDistanceKm`, `promptVersion`.
+- D-2: la respuesta es exactamente `{explanation, generated, promptVersion}`. Sin
+  `facts_used` (queda como artefacto interno del validador), sin score como campo y sin
+  metadatos del proveedor. Se actualiza `spec.md` en consecuencia.
+- D-3: el modelo puede mencionar el porcentaje, siempre idéntico a `matchScore` y
+  validado; el score se trata como hecho autoritativo, nunca recalculado ni presentado
+  como propio (Art. 2).
+- D-4: fallo del proveedor, timeout o salida rechazada → 200 con `generated=false` y
+  plantilla de fallback. Se elimina el 502 del plan; el fallback no es un error para
+  Backend.
+- D-5: proveedor no configurado o fallido degrada con log `ERROR` y responde fallback;
+  la validación estricta de `Settings` sigue en arranque, pero el readiness del
+  proveedor queda para la spec 007.
+- D-6: `locale` opcional con default `es-MX`; cualquier otro valor da 422.
+- D-7: `university` es `str` (espera confirmación de Backend sobre la forma del dato).
+- D-8: credencial de servicio en `Settings` como `SecretStr | None`, env
+  `GENAI_SERVICE_KEY`; vacía o solo espacios se normaliza a `None` y la auth falla
+  cerrado.
+- D-9: 422 si `property.currency != preferences.currency`; no se inventa conversión.
+- D-10: medir en B5 el tamaño real de system prompt + contexto antes de decidir si se
+  sube `GENAI_MAX_INPUT_CHARS` (4000 por defecto; el guard cuenta ambos textos).
+- D-11: en B1 se alinea `AGENTS.md` para no prohibir `explain-match` (ya no es futuro) y
+  se reescribe «Fuera de esta spec».
+- D-12: vocabulario inicial de servicios en `domain`: `internet`, `agua`, `luz`, `gas`,
+  `estacionamiento`, `lavadora`, `amueblado`, `baño privado`, `mascotas`.
+- D-13: normalizar todos los números a decimal antes de compararlos con los del input.
+- D-14: `MALFORMED_TEXT` detecta palabras pegadas con prefijo funcional + sufijo del
+  dominio y allowlist de colisiones reales (`porque`, `conque`, `delimite`), para evitar
+  falsos positivos con `conde`, `conforme`, `delante` o `debajo`.
+- D-15: prompt `explain_match_v2` según el primer feedback real de Gemini; v1 queda
+  histórica.
+- D-16: logger `httpx` en WARNING para conservar solo los logs estructurados propios.
+- D-17: normalizar solo espacios antes de validar (corrección tipográfica sin alterar
+  hechos) en lugar de rechazar; prompt `explain_match_v3`: sin saludos ni exclamaciones,
+  empieza con la propiedad y usa `%` en vez de «por ciento». v2 queda histórica.
+- D-18: GenAI debe cortar antes que el Backend. Recomendación de producción:
+  `GENAI_TIMEOUT_SECONDS=6` en GenAI y timeout de 8 s en el cliente del Backend, por el
+  pico real de 9639 ms en la capa gratuita. El default de `Settings` sigue en 15 s; se
+  aplica en G09/G10.
+
+Ajustes obligatorios incorporados al diseño y a la spec:
+
+1. Regla 4 del system prompt: «no lo completes ni lo deduzcas» (se corrigen caracteres
+   CJK del borrador).
+2. Rama de trabajo: la actual `feature/smart-match-explanation`.
+3. Plantilla de fallback neutra y factual, sin «No se pudo generar»; la coincidencia se
+   atribuye a las preferencias del estudiante, no a la universidad.
+4. `price` y `budgetMax` como `Decimal` (ge 0, máximo 2 decimales), no `int`.
+5. Servicios: rechazar solo caracteres de control y longitud > 40; sin regex
+   restrictiva; delimitadores como `<untrusted_data>` se escapan en `to_context()`.
+
 ## Evidencia resumida
 
 ### 001-foundation
@@ -234,32 +291,56 @@ hardcodea en el código. La matriz comparativa y las fuentes están en
 - Rama `feature/llm-provider`: 8 commits, uno por bloque.
 - Evidencia completa en `specs/011-llm-provider/evidence.md`.
 
+### 003-smart-match-explanation
+
+- `ruff check .`: sin hallazgos.
+- `mypy src`: sin errores (strict) en 23 archivos.
+- `pytest`: 409 tests aprobados, sin red (guard `block_network`), 1 warning heredado de
+  `TestClient` (deuda de 008).
+- Pruebas reales con `gemini-3.5-flash-lite` en capa gratuita, prompts v1 → v2 → v3:
+  inyección ignorada 4 de 4, 401 sin clave con mensaje genérico, auth antes de validar
+  el body. Última ronda (v3): 1406 ms caso normal y 9639 ms caso de inyección.
+- Rama `feature/smart-match-explanation`: 8 commits (B1–B7b más el cierre documental).
+- Evidencia completa en `specs/003-smart-match-explanation/evidence.md`.
+
 ## Deuda y pendientes
 
 - `GENAI_API_KEY=` y `GENAI_MODEL=` vacíos quedaban como `SecretStr('')` y `''` en lugar
   de `None`; normalizados en 011, bloque B2.
-- `StarletteDeprecationWarning` de `TestClient` con `httpx`; se mantiene la deuda y se
-  revisa en 008.
 - El logging estructurado de las llamadas al proveedor (modelo, duración, `error_code`)
   se inicia en 011 con la allowlist ampliada (D-4) y se completa en 007.
-- Usar contexto es-MX en los prompts reales de 003 y 004: moneda en MXN y formato de
-  fecha y hora UTTT. El smoke test de 011 no fija esta convención porque su objetivo
-  es medir latencia y calidad con datos sintéticos.
+- Usar contexto es-MX en los prompts reales de 004: moneda en MXN y formato de fecha y
+  hora UTTT. En 003 ya se aplica (MXN, UTTT, español de México). El smoke test de 011 no
+  fija esta convención porque su objetivo es medir latencia y calidad con datos
+  sintéticos.
 - La confirmación interactiva de `scripts/smoke_provider.py` acepta «si» en minúsculas
   porque normaliza a mayúsculas; no es un fallo, pero conviene decidir si se exige
   mayúscula estricta.
 - El precio por millón de tokens del modelo de desarrollo
   (`gemini-3.5-flash-lite`) queda por anotar desde la fuente de precios, y el modelo de
   producción se decide cuando se cree el proyecto de pago (G09).
-- Contratos y guardrails de explicación (003) y parseo (004).
-- Auth mínima de servicio en 003; endurecimiento, PII y prompt injection en 005.
+- Contratos y guardrails de parseo (004). Los de explicación (003) están cerrados.
+- Endurecimiento de auth, PII y prompt injection en 005; la auth mínima de 003 ya está
+  implementada.
+- Timeouts de producción (D18): `GENAI_TIMEOUT_SECONDS=6` en GenAI y 8 s en el cliente
+  del Backend, pendiente de aplicar en G09/G10. El default de `Settings` sigue en 15 s
+  y el pico real de 9639 ms queda registrado en la evidencia de 003.
+- Variabilidad de latencia en la capa gratuita (9639 ms en el peor caso de 003):
+  reevaluar con la capa de pago antes de la demo con datos reales (G09).
+- Vocabulario de servicios D12 (`internet`, `agua`, `luz`, `gas`, `estacionamiento`,
+  `lavadora`, `amueblado`, `baño privado`, `mascotas`) pendiente de confirmar con
+  Backend; es detector de alucinaciones, no una restricción de entrada.
+- `StarletteDeprecationWarning` de `TestClient` con `httpx`: deuda vigente, se revisa en
+  008.
 - Moderación, observabilidad avanzada, contract tests e integración (006–010).
 - No hay despliegue. Hay una credencial de desarrollo en el entorno local, fuera del
   repositorio: la capa gratuita de Gemini se usa solo con prompts sintéticos.
 
 ## Próximo paso
 
-G04 = `003-smart-match-explanation`: endpoint `explain-match` con autenticación mínima
-de servicio (`X-Service-Key`), sin alterar los hechos calculados por el Backend. La
-spec sigue `PLANNED`: se activa en su propia rama cuando su plan esté aprobado, y
-`004-natural-language-search` permanece `PLANNED` hasta que 003 cierre.
+G05 = `005-security`: endurecimiento de la autenticación de servicio, PII y defensa
+contra prompt injection más allá del mínimo de 003 (rotación, mTLS, rate limiting y
+filtrado de PII). Les siguen G06 (`006-moderation`), G07 (`007-observability`, donde se
+decide el readiness del proveedor), G08 (`004-natural-language-search`) y G09/G10, donde
+se aplican los timeouts de producción de D18. `004-natural-language-search` permanece
+`PLANNED`.

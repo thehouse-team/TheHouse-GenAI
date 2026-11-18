@@ -23,6 +23,9 @@ class Settings(BaseSettings):
     requires a credential and a model id; the factory still builds only the `fake`
     provider until its own block closes, so a `gemini` configuration fails fast
     instead of calling anything. Never log `genai_api_key`.
+
+    Since spec 003, `service_key` holds the service-to-service credential as a
+    `SecretStr`; it is never logged nor serialized.
     """
 
     model_config = SettingsConfigDict(
@@ -37,6 +40,14 @@ class Settings(BaseSettings):
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
     cors_origins: Annotated[list[str], NoDecode] = Field(default_factory=list)
     max_request_bytes: int = Field(default=65_536, ge=1_024, le=10_485_760)
+
+    # Service-to-service authentication for the generative endpoints (spec 003).
+    # Only GENAI_SERVICE_KEY is read from the environment; `service_key` remains
+    # available as an init kwarg through `populate_by_name`. Never log `service_key`.
+    service_key: SecretStr | None = Field(
+        default=None,
+        validation_alias="GENAI_SERVICE_KEY",
+    )
 
     # Provider configuration (spec 002, extended by spec 011). "gemini" is accepted
     # by the configuration and requires a credential and a model id; the factory
@@ -92,6 +103,36 @@ class Settings(BaseSettings):
         if not candidate:
             return None
         return candidate
+
+    @model_validator(mode="before")
+    @classmethod
+    def _accept_service_key_kwarg(cls, data: Any) -> Any:
+        """Allow the `service_key` init kwarg without exposing it as an env var.
+
+        Only `GENAI_SERVICE_KEY` is a valid environment source; the field name is
+        mapped here so tests and explicit construction can still use `service_key`.
+        """
+
+        if isinstance(data, dict) and "service_key" in data and "GENAI_SERVICE_KEY" not in data:
+            return {**data, "GENAI_SERVICE_KEY": data["service_key"]}
+        return data
+
+    @field_validator("service_key", mode="before")
+    @classmethod
+    def _normalize_service_key(cls, value: Any) -> Any:
+        """Treat a blank service key as unset instead of an empty secret."""
+
+        if value is None:
+            return None
+        if isinstance(value, SecretStr):
+            text = value.get_secret_value()
+        elif isinstance(value, str):
+            text = value
+        else:
+            return value
+        if not text.strip():
+            return None
+        return SecretStr(text)
 
     @model_validator(mode="after")
     def _require_gemini_credentials(self) -> Self:

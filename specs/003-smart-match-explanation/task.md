@@ -1,36 +1,37 @@
 # Tareas — 003-smart-match-explanation Explicación de Smart Match
 
-- **Estado:** PLANNED
+- **Estado:** IMPLEMENTED
 
-> No iniciar hasta que la spec sea la activa y su plan esté aprobado.
+> Spec cerrada en G04 sobre `feature/smart-match-explanation`. Las tareas se ejecutaron
+> por bloques B1–B7b, con los gates en verde en cada uno.
 
 ## Contrato y diseño
 
-- [ ] Aprobar schemas de entrada y salida.
-- [ ] Definir allowlist de hechos y límite de palabras.
-- [ ] Definir política de errores y PII.
-- [ ] Definir la autenticación mínima de servicio (header, credencial, comparación y
+- [x] Aprobar schemas de entrada y salida.
+- [x] Definir allowlist de hechos y límite de palabras.
+- [x] Definir política de errores y PII.
+- [x] Definir la autenticación mínima de servicio (header, credencial, comparación y
       respuesta 401).
 
 ## Implementación
 
-- [ ] Implementar validaciones de dominio.
-- [ ] Implementar prompt y caso de uso.
-- [ ] Implementar la dependencia de autenticación con `X-Service-Key`, `SecretStr` y
+- [x] Implementar validaciones de dominio.
+- [x] Implementar prompt y caso de uso.
+- [x] Implementar la dependencia de autenticación con `X-Service-Key`, `SecretStr` y
       comparación en tiempo constante.
-- [ ] Implementar endpoint protegido por esa dependencia.
-- [ ] Implementar validador de fidelidad de salida.
+- [x] Implementar endpoint protegido por esa dependencia.
+- [x] Implementar validador de fidelidad de salida.
 
 ## Pruebas y cierre
 
-- [ ] Añadir pruebas de fidelidad e inyección.
-- [ ] Añadir pruebas de error y timeout.
-- [ ] Añadir pruebas de 401 (sin credencial y con credencial incorrecta).
-- [ ] Ejecutar gates y actualizar evidencia.
+- [x] Añadir pruebas de fidelidad e inyección.
+- [x] Añadir pruebas de error y timeout.
+- [x] Añadir pruebas de 401 (sin credencial y con credencial incorrecta).
+- [x] Ejecutar gates y actualizar evidencia.
 
 ## Cierre
 
-- [ ] Actualizar `checklist.md` y `evidence.md` con resultados reales.
-- [ ] Ejecutar `ruff check .`, `mypy src` y `pytest`.
-- [ ] Revisar seguridad y ausencia de secretos/PII.
-- [ ] Cambiar el estado a IMPLEMENTED solo al cumplir todo.
+- [x] Actualizar `checklist.md` y `evidence.md` con resultados reales.
+- [x] Ejecutar `ruff check .`, `mypy src` y `pytest`.
+- [x] Revisar seguridad y ausencia de secretos/PII.
+- [x] Cambiar el estado a IMPLEMENTED solo al cumplir todo.

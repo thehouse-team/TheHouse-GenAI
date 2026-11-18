@@ -27,6 +27,9 @@ _LOG_EXTRA_FIELDS = (
     "error_code",
     "prompt_chars",
     "completion_chars",
+    "generated",
+    "prompt_version",
+    "fallback_reason",
 )
 
 
@@ -64,3 +67,5 @@ def configure_logging(level: str = "INFO") -> None:
 
     # Requests are logged once by RequestContextMiddleware with structured fields.
     logging.getLogger("uvicorn.access").disabled = True
+    # The HTTP client emits one INFO line per call; keep only our controlled logs.
+    logging.getLogger("httpx").setLevel(logging.WARNING)
