@@ -221,7 +221,9 @@ def test_fallback_has_only_input_numbers_and_mentions_preferences() -> None:
     )
     assert len(response.explanation.split()) <= 120
     assert "$2,800 MXN" in response.explanation
-    assert "$3,000 MXN" in response.explanation
+    # Decision A6: the fallback carries structured facts only.
+    assert "$3,000 MXN" not in response.explanation
+    assert "Cuarto cerca de UTTT" not in response.explanation
 
 
 def test_fallback_omits_the_service_clause_when_there_are_no_services() -> None:

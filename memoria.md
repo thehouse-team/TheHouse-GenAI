@@ -1,6 +1,6 @@
 # Memoria del proyecto — TheHouse GenAI
 
-Última actualización: 2026-11-17
+Última actualización: 2026-11-18
 
 ## Identidad
 
@@ -17,7 +17,7 @@ Smart Match, no consulta propiedades y no contiene Mobile.
 | 003-smart-match-explanation | IMPLEMENTED | Explicación de match sin alterar hechos, con auth mínima de servicio |
 | 004-natural-language-search | PLANNED | Parseo de búsqueda a filtros, nunca propiedades |
 | 005-security | IMPLEMENTED | Autenticación de servicio endurecida, PII, prompt injection |
-| 006-moderation | PLANNED | Política y moderación de contenido |
+| 006-moderation | IMPLEMENTED | Política y moderación de la salida generativa (alcance A) |
 | 007-observability | PLANNED | Métricas, trazas, SLOs y alertas |
 | 008-testing | PLANNED | Estrategia completa y contract tests (transversal, cierra en G09) |
 | 009-ci-cd | PLANNED | Pipeline completo y despliegue futuro |
@@ -33,7 +33,7 @@ Smart Match, no consulta propiedades y no contiene Mobile.
 | G03 | 011-llm-provider | Evaluación de proveedores y adaptador real (IMPLEMENTED) |
 | G04 | 003-smart-match-explanation | Endpoint explain-match con auth mínima de servicio |
 | G05 | 005-security | Endurecimiento de seguridad, PII, prompt injection |
-| G06 | 006-moderation | Moderación de contenido |
+| G06 | 006-moderation | Moderación de la salida generativa (IMPLEMENTED) |
 | G07 | 007-observability | Observabilidad, métricas y SLOs |
 | G08 | 004-natural-language-search | Endpoint parse-search con auth endurecida |
 | G09 | 010-integration-thehouse | Integración con Backend; cierra 008-testing |
@@ -45,7 +45,18 @@ cobertura) se acumulan en cada fase y la spec se cierra en G09, junto con
 
 ## Spec activa
 
-Ninguna. `005-security` (G05) se cerró como `IMPLEMENTED` el 2026-11-17 sobre la rama
+Ninguna. `006-moderation` (G06) se cerró como `IMPLEMENTED` el 2026-11-18 sobre la rama
+`feature/moderation` con el **alcance A** aprobado: política `moderation_v1`, puerto de
+moderación con fake y moderador local determinista, moderación de la **salida** de
+`explain-match`, plantilla sin título ni presupuesto y `safetySettings` en Gemini.
+Criterios verificados, gates en verde, 688 tests sin red y evidencia registrada en
+`specs/006-moderation/evidence.md`. Sin endpoint de contenido de usuarios, sin LLM de
+moderación y sin dependencias nuevas. La prueba manual real del 2026-11-18 con
+`gemini-3.5-flash-lite`, `safetySettings` y moderación local devolvió una explicación
+fiel con `generated=true`; la mojibake observada en PowerShell 5 se debió al cliente
+de prueba (`Invoke-RestMethod`), no al servicio, y queda documentada para G09.
+
+`005-security` (G05) se cerró como `IMPLEMENTED` el 2026-11-17 sobre la rama
 `feature/security-hardening` con criterios verificados, gates en verde y 536 tests sin
 red. Endureció la autenticación de servicio de 003 sin rehacerla: rotación de clave,
 rate limiting en memoria, minimización de PII, corpus de prompt injection, headers de
@@ -58,7 +69,7 @@ sus criterios verificados, los gates en verde y la evidencia registrada en
 `specs/011-llm-provider/evidence.md`, incluido el smoke test manual ejecutado con una
 credencial real el 2026-11-16. `001-foundation`, `002-provider-abstraction`, 003 y 005
 permanecen `IMPLEMENTED` y el resto de specs, `PLANNED`. Solo una spec puede estar
-`ACTIVE` a la vez.
+`ACTIVE` a la vez; ahora mismo ninguna lo está.
 
 ## Enmiendas de la constitución
 
@@ -284,6 +295,26 @@ Plan aprobado el 2026-11-17. Decisiones D1–D12 registradas al activar la spec:
 Las doce decisiones se aplicaron íntegramente; el detalle está en
 `specs/005-security/spec.md` y los resultados en `specs/005-security/evidence.md`.
 
+## Decisiones tomadas en 006
+
+Plan aprobado el 2026-11-18 para el alcance A. Quedan fuera de G06 el endpoint de
+moderación de contenido de usuarios y el uso del LLM como moderador.
+
+| # | Decisión |
+| --- | --- |
+| A1 | Alcance A únicamente: reglas deterministas locales sobre la salida de `explain-match` más `safetySettings` en `generateContent`. Sin endpoint de contenido de usuarios. |
+| A2 | Fail-closed en salida: ante decisión adversa o error del moderador se responde 200 con `generated=false` y la plantilla de fallback; nunca 500 ni un campo nuevo en la respuesta. |
+| A3 | `safetySettings`: cuatro categorías centrales de Gemini con umbral `BLOCK_MEDIUM_AND_ABOVE`, como constante en `providers/gemini.py` y sin variable de entorno nueva. Es refuerzo del proveedor, no el mecanismo de moderación. |
+| A4 | Cero llamadas extra a Gemini: las reglas locales no consumen cuota y los `safetySettings` viajan en la misma petición. Sin modo híbrido en G06. |
+| A5 | RF-02 se reformula: «toda salida generativa pasa por el puerto de moderación; la entrada de `explain-match` sigue cubierta por 003/005 (escape y registro, sin rechazo, D5 de 005)». |
+| A6 | La plantilla de fallback de `explain-match` **no incluye el título de la propiedad ni el presupuesto**: el título lo escribe el arrendador y puede traer PII, ofensas o inyección (observado en G04); el presupuesto es una preferencia del estudiante. La plantilla usa solo datos estructurados: score, precio con moneda, distancia, universidad y servicios. Sin cambiar el contrato `{explanation, generated, promptVersion}`. |
+| A7 | Para la opción B, cuando se active: fail-closed = `review` (Backend no publica hasta revisión humana) y LLM solo con flag opt-in. Queda documentado como decisión anticipada, sin implementar en G06. |
+
+Las decisiones A1–A7 se aplicaron íntegramente en los bloques B1–B6 y la spec se cerró
+como `IMPLEMENTED` el 2026-11-18, con la evidencia y el mapeo criterio→test registrados
+en `specs/006-moderation/evidence.md`. A6 se implementó en B4, incluida la actualización
+de los tests de 003 y 006.
+
 El único cliente es Backend, así que el rate limit por cliente es efectivamente global
 para el tráfico legítimo. Gemini en capa gratuita limita ~15 RPM y el exceso termina en
 fallback 200 con `generated=false`; el rate limit de GenAI protege contra abuso si la
@@ -387,14 +418,28 @@ explicaciones en Backend y manejo del 429 como «sin explicación».
   Backend; es detector de alucinaciones, no una restricción de entrada.
 - Deuda (e): `StarletteDeprecationWarning` de `TestClient` con `httpx`: se mantiene y se
   revisa en 008.
-- Moderación, observabilidad avanzada, contract tests e integración (006–010).
+- Deuda 006-(a): la opción B (moderación de contenido de usuarios: títulos y descripciones
+  de propiedades, reseñas y reportes) quedó fuera del alcance A. Si el requisito
+  académico la exige, se abre como **spec nueva** dependiente de 006, con el contrato
+  propuesto en el plan y la decisión A7 (fail-closed `review`, LLM solo con flag opt-in).
+- Deuda 006-(b): el léxico de moderación se amplía con el uso, a mano y en PR por el
+  equipo de TheHouse; el archivo de datos y `test_shipped_lexicon_is_well_formed` son la
+  única fuente de términos reales.
+- Deuda 006-(c): monitorizar `fallback_reason` `MODERATION_BLOCKED`, `MODERATION_REVIEW`
+  y `MODERATION_UNAVAILABLE`, además de `PROVIDER_ERROR`, para detectar un exceso de
+  bloqueos por `safetySettings` o falsos positivos del léxico. Se decide en 007 con las
+  métricas y alertas.
+- Deuda 006-(d): se mantiene el `StarletteDeprecationWarning` de `TestClient` con
+  `httpx`; se revisa en 008. Es la misma deuda (e) ya registrada.
+- Observabilidad avanzada, contract tests e integración (007–010).
 - No hay despliegue. Hay una credencial de desarrollo en el entorno local, fuera del
   repositorio: la capa gratuita de Gemini se usa solo con prompts sintéticos.
 
 ## Próximo paso
 
-G06 = `006-moderation`: política y moderación de contenido. Les siguen G07
-(`007-observability`, donde se decide el readiness del proveedor), G08
+G07 = `007-observability`: métricas, trazas, SLOs y alertas, donde se decide el
+readiness del proveedor y se instrumentan los motivos `MODERATION_*` y `PROVIDER_ERROR`
+(deuda 006-(c)). Le siguen G08
 (`004-natural-language-search`) y G09/G10, donde se aplican los timeouts de producción
 de D18 y se decide el despliegue (incluidos mTLS, HSTS/CSP, la cabecera `Server` y el
 rate limit global, deudas (a) y (b) de 005). `004-natural-language-search` permanece

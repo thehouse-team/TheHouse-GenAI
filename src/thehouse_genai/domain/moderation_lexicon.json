@@ -1,0 +1,26 @@
+{
+  "version": "1.0",
+  "block": [
+    "pendejo", "pendeja", "pendejos", "pendejas",
+    "puto", "puta", "putos", "putas",
+    "cabron", "cabrona", "cabrones",
+    "culero", "culera", "culeros",
+    "verga", "vergas",
+    "chingada", "chingadera", "chingaderas",
+    "joto", "jotos", "maricon", "maricones",
+    "perra", "zorra"
+  ],
+  "review": [
+    "pinche", "pinches",
+    "mamada", "mamadas", "mamon", "mamona",
+    "pedo", "pedos",
+    "cagada", "cagadas",
+    "carajo",
+    "jodido", "jodida", "jodidos",
+    "chingon", "chingona",
+    "madres",
+    "naco", "naca",
+    "huevon", "huevona"
+  ],
+  "allowlist": []
+}

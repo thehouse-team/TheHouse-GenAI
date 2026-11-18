@@ -1,62 +1,154 @@
 # 006-moderation — Moderación de contenido
 
-- **Estado:** PLANNED
-- **Depende de:** 002-provider-abstraction, 005-security
+- **Estado:** IMPLEMENTED
+- **Depende de:** 002-provider-abstraction, 005-security, 011-llm-provider
 - **Habilita:** 010-integration-thehouse
 - **Fecha de alta:** 2026-11-08
+- **Fecha de activación:** 2026-11-18
+- **Plan aprobado:** 2026-11-18
+- **Última revisión:** 2026-11-18
 
 ## Objetivo
 
-Definir una política y un puerto de moderación para entradas y salidas generativas, con comportamiento seguro y trazable ante contenido dañino.
+Definir una política y un puerto de moderación para la salida generativa, con
+comportamiento seguro y trazable ante contenido dañino, sin depender del proveedor
+generativo como único mecanismo de seguridad.
 
 ## Contexto
 
-El servicio atiende a estudiantes y generará texto libre. Se necesita una política explícita y un mecanismo desacoplado para bloquear contenido dañino sin filtrar el contenido a logs.
+El servicio atiende a estudiantes y genera texto libre. Se necesita una política
+explícita y un mecanismo desacoplado para bloquear contenido dañino sin filtrar el
+contenido a logs. 003 ya valida la salida contra alucinaciones y rechaza los
+`finishReason` de seguridad de Gemini; 005 endureció la autenticación, el rate limiting
+y la defensa contra prompt injection. Esta spec **añade** una capa determinista local,
+independiente del LLM, y refuerza la del proveedor con `safetySettings`.
+
+El alcance aprobado es el **A**. La opción B (moderación de contenido de usuarios) queda
+fuera y se documenta como deuda para una spec nueva si el requisito académico la exige.
 
 ## Alcance
 
 ### Incluido
 
-- Política versionada de categorías prohibidas.
-- Puerto de moderación independiente del proveedor.
-- Moderación de entrada y salida antes de responder.
-- Comportamiento fail-closed configurable.
-- Metadatos de auditoría sin contenido sensible.
-- Pruebas con moderador fake.
+- Política versionada (`moderation_v1`) de categorías, códigos de motivo y severidad.
+- Puerto `ModerationProvider` independiente del proveedor, con fake y moderador local
+  determinista (sin red, sin LLM y sin dependencias nuevas).
+- Moderación de la **salida** de `explain-match` antes de responder, a través del puerto.
+- Comportamiento fail-closed aprobado y versionado: fallback 200 con `generated=false`.
+- `safetySettings` en `generateContent` como refuerzo del proveedor.
+- Metadatos de auditoría sin contenido: decisión, categoría y versión de política.
+- Pruebas con moderador fake y corpus benigno versionado.
 
 ### Excluido
 
-- Contratar un proveedor real de moderación.
+- Moderación de contenido de usuarios (opción B: títulos, descripciones, reseñas,
+  reportes) y su endpoint: queda para una spec nueva (deuda (f) en `memoria.md`).
+- Uso del LLM como mecanismo de moderación; contratar un proveedor real de moderación.
 - UI de moderación y revisión humana.
 - Reemplazar la moderación existente del Backend.
 - Asesoría legal definitiva.
+- Cambios al contrato congelado de `explain-match`.
 
 ## Requisitos
 
-- **RF-01:** política de categorías y severidad documentada y versionada.
-- **RF-02:** toda entrada y salida generativa pasa por el puerto de moderación.
-- **RF-03:** contenido bloqueado no se envía al cliente.
-- **RF-04:** ante error del moderador se aplica la política fail-closed aprobada.
-- **RF-05:** logs guardan decisión y categoría, nunca el contenido.
-- **RF-06:** falsos positivos tienen ruta de revisión definida.
+- **RF-01:** política de categorías y severidad documentada y versionada como
+  `moderation_v1`.
+- **RF-02:** toda **salida** generativa pasa por el puerto de moderación. La entrada de
+  `explain-match` sigue cubierta por 003/005: se delimita, se escapa y se registra como
+  metadato seguro, sin rechazarse (005 D5).
+- **RF-03:** contenido bloqueado no se envía al cliente; degrada a la plantilla de
+  fallback con `generated=false`.
+- **RF-04:** ante error o timeout del moderador se aplica la política fail-closed
+  aprobada (A2): fallback 200, nunca un error para Backend ni un campo nuevo.
+- **RF-05:** logs guardan decisión, categoría y versión de política, nunca el contenido.
+- **RF-06:** los falsos positivos tienen ruta definida: la decisión adversa degrada a
+  fallback y el motivo estable queda en logs para revisión; sin UI en esta spec.
+- **RF-07:** los detectores son deterministas, locales, usan solo la stdlib y operan
+  sobre texto normalizado, con coincidencia por palabra completa y allowlist de
+  colisiones.
+- **RF-08:** `safetySettings` viaja en la misma petición a Gemini: cero llamadas extra.
 
 ## Criterios de aceptación
 
-- [ ] Política aprobada y versionada.
-- [ ] Puerto e implementación fake probados.
-- [ ] Entrada/salida bloqueada no llega al usuario.
-- [ ] Error del moderador respeta fail-closed.
-- [ ] Logs sin contenido sensible.
-- [ ] Pruebas de categorías y falsos positivos.
+- [ ] Política `moderation_v1` aprobada, versionada y probada.
+- [ ] Puerto, fake y moderador local probados sin red.
+- [ ] Correo, teléfono (10 dígitos, `+52` opcional) y URL (esquema o `www.`) en la salida
+      degradan a fallback y no llegan al cliente.
+- [ ] Léxico ofensivo es-MX por palabra completa, con allowlist de colisiones.
+- [ ] El corpus benigno versionado de rentas estudiantiles no se bloquea.
+- [ ] Salida adversa o error del moderador respeta el fail-closed (A2).
+- [ ] Logs solo con metadatos permitidos; ningún texto moderado aparece en logs.
+- [ ] `safetySettings` con `BLOCK_MEDIUM_AND_ABOVE` presente en el payload, sin llamada
+      extra y sin contenido en logs.
+- [ ] La plantilla de fallback no incluye el título de la propiedad (A6).
+- [ ] El contrato `{explanation, generated, promptVersion}` no cambia.
+- [ ] `ruff check .`, `mypy src` y `pytest` en verde, sin red.
 
 ## Seguridad y privacidad
 
-- No registrar texto moderado ni motivos detallados con PII.
-- Minimizar datos enviados al moderador.
-- Limitar tamaño de texto a moderar.
-- Separar decisión de moderación de la generación para poder auditarla.
+- No registrar texto moderado ni motivos con PII: solo códigos estables de categoría y
+  motivo.
+- Minimizar datos enviados al moderador: el moderador es local, así que el texto nunca
+  sale del proceso.
+- Limitar el tamaño del texto a moderar con el mismo tope de la explicación (900
+  caracteres).
+- Separar la decisión de moderación de la generación para poder auditarla.
+- La plantilla de fallback no se modera porque se construye solo con datos estructurados
+  y validados por Backend; desde A6 tampoco incluye el título libre del arrendador ni
+  el presupuesto.
+
+## Política moderation_v1
+
+| Señal detectada | Decisión | Motivo registrado |
+| --- | --- | --- |
+| Correo electrónico | `block` | `PII_EMAIL` |
+| Teléfono de 10 dígitos, con `+52` opcional | `block` | `PII_PHONE` |
+| URL con esquema (`http`/`https`) o prefijo `www.` | `block` | `URL_EXTERNAL` |
+| Término incluido en la lista `block` del léxico | `block` | `OFFENSIVE_LANGUAGE` |
+| Término incluido en la lista `review` del léxico | `review` | `OFFENSIVE_LANGUAGE` |
+| Texto sin estas señales, incluido el corpus benigno de rentas | `allow` | — |
+
+La coincidencia es por palabra completa e insensible a acentos y mayúsculas; la
+allowlist se aplica antes de buscar los términos, para no marcar palabras legítimas del
+contexto de rentas. La prioridad es `block > review > allow`.
+
+En G06 no hay canal de revisión humana: una decisión `block` o `review` degrada a la
+plantilla de fallback con motivo `MODERATION_BLOCKED` o `MODERATION_REVIEW`. La categoría
+`review` queda definida en la política para la opción B futura (A7), donde Backend no
+publicaría el contenido hasta la revisión.
+
+### Cómo se amplía el léxico
+
+El léxico es un archivo JSON de datos versionado, cargado por `load_lexicon()`, con
+`version`, `block`, `review` y `allowlist`. Para añadir términos se edita ese archivo en
+un PR: minúsculas, sin acentos, una sola palabra por término, sin solapamiento entre
+listas. `test_shipped_lexicon_is_well_formed` valida el formato y que las listas no estén
+vacías; `test_allowlist_suppresses_a_lexicon_match` cubre los falsos positivos. El
+código y los tests no contienen términos reales: usan solo tokens ficticios.
+
+### Responsable
+
+El equipo de TheHouse, como dueño del dominio de español de México, mantiene el léxico
+y revisa cada ampliación en PR. GenAI nunca añade términos automáticamente ni aprende
+del tráfico.
+
+## Decisiones aprobadas
+
+| # | Decisión |
+| --- | --- |
+| A1 | Alcance A únicamente: reglas deterministas locales sobre la salida más `safetySettings`. Sin endpoint de contenido de usuarios. |
+| A2 | Fail-closed en salida: ante decisión adversa o error del moderador, 200 con `generated=false` y la plantilla de fallback; nunca 500 ni un campo nuevo. |
+| A3 | `safetySettings`: cuatro categorías centrales con umbral `BLOCK_MEDIUM_AND_ABOVE`, constante en `providers/gemini.py`, sin variable de entorno nueva. Refuerzo del proveedor, no mecanismo de moderación. |
+| A4 | Cero llamadas extra a Gemini. Sin modo híbrido en G06. |
+| A5 | RF-02 reformulada: se modera la salida por el puerto; la entrada sigue cubierta por 003/005 (escape y registro, sin rechazo). |
+| A6 | La plantilla de fallback no incluye el título de la propiedad ni el presupuesto: usa solo datos estructurados (score, precio con moneda, distancia, universidad y servicios). Contrato sin cambios. |
+| A7 | Decisión anticipada para la opción B: fail-closed = `review`, LLM solo con flag opt-in. Sin implementar en G06. |
 
 ## Fuera de esta spec
 
-Esta spec permanece `PLANNED` hasta que sea su turno. No se activa hasta que su plan
-esté aprobado.
+El alcance A queda `ACTIVE` en G06 sobre la rama `feature/moderation`. La opción B
+(moderación de contenido de usuarios) no se implementa: deuda (f) en `memoria.md` y
+contrato propuesto en `plan.md`, para abrir como spec nueva si el requisito académico la
+exige. Siguen fuera de alcance la UI de revisión humana, un proveedor real de
+moderación, el uso del LLM como moderador y cualquier cambio al contrato de
+`explain-match`.

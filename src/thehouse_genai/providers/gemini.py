@@ -44,6 +44,22 @@ _API_KEY_HEADER: Final[str] = "x-goog-api-key"
 _JSON_MIME_TYPE: Final[str] = "application/json"
 _MODEL_ID_PATTERN: Final[re.Pattern[str]] = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 
+# Defense in depth: the vendor filters the prompt and the completion before the local
+# moderator sees the text. These settings are a fixed policy, not a runtime option, and
+# never disable a category. They travel in the same generateContent request, so they
+# add no call and no quota consumption.
+_SAFETY_THRESHOLD: Final[str] = "BLOCK_MEDIUM_AND_ABOVE"
+_SAFETY_CATEGORIES: Final[tuple[str, ...]] = (
+    "HARM_CATEGORY_HARASSMENT",
+    "HARM_CATEGORY_HATE_SPEECH",
+    "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+    "HARM_CATEGORY_DANGEROUS_CONTENT",
+)
+_SAFETY_SETTINGS: Final[tuple[dict[str, str], ...]] = tuple(
+    {"category": category, "threshold": _SAFETY_THRESHOLD}
+    for category in _SAFETY_CATEGORIES
+)
+
 # Finish reasons that mean the content was withheld. They are failures of the
 # contract, not empty answers.
 _BLOCKED_FINISH_REASONS: Final[frozenset[str]] = frozenset(
@@ -242,6 +258,7 @@ class GeminiProvider:
         payload: dict[str, Any] = {
             "contents": [{"role": "user", "parts": [{"text": request.prompt}]}],
             "generationConfig": config,
+            "safetySettings": list(_SAFETY_SETTINGS),
         }
         if request.system_prompt is not None:
             payload["systemInstruction"] = {"parts": [{"text": request.system_prompt}]}
