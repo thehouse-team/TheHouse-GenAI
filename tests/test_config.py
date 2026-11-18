@@ -226,6 +226,15 @@ def test_reads_service_key_from_environment(monkeypatch: pytest.MonkeyPatch) -> 
     assert settings.service_key.get_secret_value() == "test-service-key"
 
 
+def test_generic_service_key_env_is_ignored(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("GENAI_SERVICE_KEY", raising=False)
+    monkeypatch.setenv("SERVICE_KEY", "algo")
+
+    settings = Settings(_env_file=None)
+
+    assert settings.service_key is None
+
+
 def test_service_key_is_not_exposed_in_repr() -> None:
     settings = Settings(_env_file=None, service_key="super-secret-service-key")
 

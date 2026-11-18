@@ -10,7 +10,7 @@ import json
 from functools import lru_cache
 from typing import Annotated, Any, Literal, Self
 
-from pydantic import AliasChoices, Field, SecretStr, field_validator, model_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
@@ -42,11 +42,11 @@ class Settings(BaseSettings):
     max_request_bytes: int = Field(default=65_536, ge=1_024, le=10_485_760)
 
     # Service-to-service authentication for the generative endpoints (spec 003).
-    # The env var is GENAI_SERVICE_KEY; `service_key` stays available as an init kwarg.
-    # Never log `service_key`.
+    # Only GENAI_SERVICE_KEY is read from the environment; `service_key` remains
+    # available as an init kwarg through `populate_by_name`. Never log `service_key`.
     service_key: SecretStr | None = Field(
         default=None,
-        validation_alias=AliasChoices("GENAI_SERVICE_KEY", "service_key"),
+        validation_alias="GENAI_SERVICE_KEY",
     )
 
     # Provider configuration (spec 002, extended by spec 011). "gemini" is accepted
@@ -103,6 +103,19 @@ class Settings(BaseSettings):
         if not candidate:
             return None
         return candidate
+
+    @model_validator(mode="before")
+    @classmethod
+    def _accept_service_key_kwarg(cls, data: Any) -> Any:
+        """Allow the `service_key` init kwarg without exposing it as an env var.
+
+        Only `GENAI_SERVICE_KEY` is a valid environment source; the field name is
+        mapped here so tests and explicit construction can still use `service_key`.
+        """
+
+        if isinstance(data, dict) and "service_key" in data and "GENAI_SERVICE_KEY" not in data:
+            return {**data, "GENAI_SERVICE_KEY": data["service_key"]}
+        return data
 
     @field_validator("service_key", mode="before")
     @classmethod
