@@ -1,6 +1,6 @@
 # Plan — 003-smart-match-explanation Explicación de Smart Match
 
-- **Estado:** ACTIVE
+- **Estado:** IMPLEMENTED
 - **Depende de:** 001-foundation, 002-provider-abstraction, 011-llm-provider
 - **Rama:** `feature/smart-match-explanation`
 
@@ -62,8 +62,8 @@
 | B5 | Prompt `explain_match_v1`, caso de uso, validación y fallback. | Completado |
 | B6 | Factory en arranque, inyección por `app.state` y endpoint. | Completado |
 | B7 | Prompt v2, `MALFORMED_TEXT`, logger `httpx` y respuestas reales. | Completado |
-| B7b | Normalización de espacios, prompt v3 y respuestas reales v2. | En curso |
-| B8 | Cierre SDD, evidencia y PR. | Pendiente |
+| B7b | Normalización de espacios, prompt v3 y respuestas reales v2. | Completado |
+| B8 | Cierre SDD, evidencia y PR. | Completado |
 
 Cada bloque deja `ruff check .`, `mypy src` y `pytest` en verde. B1 se commita; B2 no se
 commitea y no se avanza a B3 sin revisión.
@@ -95,7 +95,7 @@ commitea y no se avanza a B3 sin revisión.
   estándar y sin filtrar detalles.
 - `provider_model` y la credencial no aparecen en la respuesta ni en logs.
 
-## Decisiones D1–D17 y ajustes
+## Decisiones D1–D18 y ajustes
 
 Ver la tabla completa en `spec.md`, sección «Decisiones aprobadas». Resumen: D1 camelCase
 con alias; D2 sin `facts_used`; D3 porcentaje validado; D4 200 + `generated=false` sin
@@ -107,7 +107,8 @@ normalización a decimal. Ajustes 1–5: redacción de la regla 4 del system pro
 precios y validación laxa de servicios con delimitadores escapados. B7 añade D14
 (`MALFORMED_TEXT` acotado para palabras pegadas), D15 (prompt v2 con el feedback real de
 Gemini; v1 queda histórica), D16 (logger `httpx` en WARNING) y D17 (normalizar espacios
-en vez de rechazar, prompt v3 sin saludos y con `%`, sin «por ciento»).
+en vez de rechazar, prompt v3 sin saludos y con `%`, sin «por ciento») y D18 (timeouts
+de producción: 6 s en GenAI y 8 s en el Backend; default de 15 s sin cambios).
 
 ## Riesgos y mitigaciones
 

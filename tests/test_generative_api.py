@@ -138,6 +138,17 @@ def test_validation_errors_use_the_standard_envelope(case: str, mutate: Any) -> 
     assert error["message"] == "Request validation failed."
 
 
+def test_auth_is_evaluated_before_body_validation() -> None:
+    payload = _payload()
+    payload["matchScore"] = 101
+
+    with _client(_provider()) as client:
+        response = client.post(URL, json=payload, headers={})
+
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] == "UNAUTHORIZED"
+
+
 def test_provider_failure_returns_a_safe_fallback() -> None:
     provider = FakeProvider(error=ProviderTimeoutError())
 

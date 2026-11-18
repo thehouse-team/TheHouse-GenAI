@@ -1,6 +1,6 @@
 # 003-smart-match-explanation — Explicación de Smart Match
 
-- **Estado:** ACTIVE
+- **Estado:** IMPLEMENTED
 - **Depende de:** 001-foundation, 002-provider-abstraction, 011-llm-provider
 - **Habilita:** 010-integration-thehouse
 - **Fecha de alta:** 2026-11-08
@@ -236,6 +236,7 @@ No se usa la frase «No se pudo generar…». El fallback no es un error para Ba
 | D15 | Prompt `explain_match_v2` según las respuestas reales de Gemini: segunda persona, tono cálido, 2–3 oraciones, máximo 60 palabras, porcentaje con `%`, precios `$2,800 MXN`, sin «el resultado de coincidencia es» ni «puntaje», con espacio entre palabras. Queda histórica. |
 | D16 | El logger `httpx` se fija en WARNING para conservar solo los logs estructurados propios. |
 | D17 | Ante errores de espacio junto a puntuación (`cuesta$2,800`, `1.3 km,estando`) se normaliza en lugar de rechazar: es una corrección tipográfica que no altera hechos. Las reglas exigen letra adyacente, por lo que decimales (`1.3`) y miles (`2,800`) no se tocan. Las palabras pegadas siguen siendo `MALFORMED_TEXT` (D14). Prompt `explain_match_v3`: sin saludos ni exclamaciones, empieza con la propiedad y usa el símbolo `%` en vez de «por ciento». |
+| D18 | GenAI debe cortar antes que el Backend. Recomendación de producción: `GENAI_TIMEOUT_SECONDS=6` en GenAI y timeout de 8 s en el cliente del Backend, por el pico real de 9639 ms en la capa gratuita. El default de `Settings` sigue en 15 s; se aplica en G09/G10. |
 
 ### Ajustes obligatorios incorporados
 
@@ -249,7 +250,7 @@ No se usa la frase «No se pudo generar…». El fallback no es un error para Ba
 
 ## Fuera de esta spec
 
-Esta spec está `ACTIVE` en la fase G04 sobre la rama `feature/smart-match-explanation`.
+Esta spec quedó `IMPLEMENTED` en la fase G04 sobre la rama `feature/smart-match-explanation`.
 Se cierra como `IMPLEMENTED` solo con criterios verificados, gates en verde y evidencia
 registrada. Siguen fuera de alcance el cálculo de Smart Match, la consulta de
 propiedades, proveedores reales nuevos, autenticación de usuarios, mTLS, rotación de

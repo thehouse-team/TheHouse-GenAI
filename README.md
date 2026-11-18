@@ -6,8 +6,8 @@ estructurados. No calcula Smart Match, no consulta propiedades y no sustituye al
 
 ## Estado
 
-G01 Foundation, G02 (`002-provider-abstraction`) y G03 (`011-llm-provider`)
-implementados. **G04 (`003-smart-match-explanation`) en curso.**
+G01 Foundation, G02 (`002-provider-abstraction`), G03 (`011-llm-provider`) y G04
+(`003-smart-match-explanation`) implementados.
 
 G02 define el puerto `GenerativeAiProvider`, sus DTOs inmutables, la taxonomía de
 errores, el guard central de timeout y límite de entrada, un `FakeProvider`
@@ -23,6 +23,51 @@ la capa gratuita, con prompts sintéticos.
 El roadmap por fases (G01–G10) y el estado de cada spec están en `memoria.md`. El
 contrato de `explain-match` está aprobado con Backend y se implementa en G04;
 `parse-search` sigue planificado en `specs/` y todavía no se implementa.
+
+## Endpoint explain-match
+
+`POST /api/v1/generative/explain-match`. Requiere la cabecera `X-Service-Key` con el
+secreto compartido con Backend (configurado en `GENAI_SERVICE_KEY`); sin clave o con una
+clave inválida responde `401` con el sobre de error estándar. La autenticación se evalúa
+antes de validar el body.
+
+Request (camelCase, campos obligatorios salvo `locale` y las listas de servicios):
+
+```json
+{
+  "matchScore": 91,
+  "locale": "es-MX",
+  "university": "UTTT",
+  "property": {
+    "title": "Habitación cerca de UTTT",
+    "price": 2800,
+    "currency": "MXN",
+    "distanceKm": 1.3,
+    "services": ["internet"]
+  },
+  "preferences": {
+    "budgetMax": 3000,
+    "currency": "MXN",
+    "maxDistanceKm": 3.0,
+    "essentialServices": ["internet"]
+  }
+}
+```
+
+Response:
+
+```json
+{
+  "explanation": "Habitación cerca de UTTT coincide un 91% porque cuesta $2,800 MXN, se ubica a 1.3 kilómetros de la universidad y cuenta con internet.",
+  "generated": true,
+  "promptVersion": "explain_match_v3"
+}
+```
+
+`generated=false` indica una explicación de plantilla construida solo con datos del
+input (fallo del proveedor o salida rechazada); en ese caso el código HTTP sigue siendo
+`200`. GenAI no calcula ni modifica `matchScore` y nunca devuelve detalles del proveedor.
+Ver `specs/003-smart-match-explanation/evidence.md` para las pruebas reales.
 
 ## Ejecución local
 
@@ -63,9 +108,10 @@ por REST con `httpx`. Su configuración es por entorno:
 | Variable | Obligatoria | Descripción |
 | --- | --- | --- |
 | `GENAI_PROVIDER` | Sí | `fake` (doble de test, sin red) o `gemini` |
+| `GENAI_SERVICE_KEY` | Sí, para `explain-match` | Secreto compartido con Backend (`X-Service-Key`); `SecretStr`, nunca se registra |
 | `GENAI_API_KEY` | Con `gemini` | Credencial; se modela como `SecretStr` y nunca se registra |
 | `GENAI_MODEL` | Con `gemini` | Id del modelo; no hay valor por defecto en el repositorio |
-| `GENAI_TIMEOUT_SECONDS` | No | Timeout de la llamada; 15 s por defecto |
+| `GENAI_TIMEOUT_SECONDS` | No | Timeout de la llamada; 15 s por defecto. En producción (G09/G10) usar 6 s y 8 s en el cliente de Backend (D18) |
 | `GENAI_MAX_INPUT_CHARS` | No | Límite de entrada; 4000 caracteres por defecto |
 
 El script `scripts/smoke_provider.py` es una utilidad **manual y opt-in** para
