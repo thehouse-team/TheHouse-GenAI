@@ -121,6 +121,10 @@ por REST con `httpx`. Su configuración es por entorno:
 | `GENAI_MODEL` | Con `gemini` | Id del modelo; no hay valor por defecto en el repositorio |
 | `GENAI_TIMEOUT_SECONDS` | No | Timeout de la llamada; 15 s por defecto. En producción (G09/G10) usar 6 s y 8 s en el cliente de Backend (D18) |
 | `GENAI_MAX_INPUT_CHARS` | No | Límite de entrada; 4000 caracteres por defecto |
+| `GENAI_RATE_LIMIT_ENABLED` | No | Rate limit en memoria; `true` por defecto |
+| `GENAI_RATE_LIMIT_REQUESTS` | No | Peticiones por ventana y cliente; 60 por defecto |
+| `GENAI_RATE_LIMIT_WINDOW_SECONDS` | No | Duración de la ventana; 60 s por defecto |
+| `GENAI_RATE_LIMIT_MAX_CLIENTS` | No | Máximo de ventanas rastreadas; 1000 por defecto |
 
 El script `scripts/smoke_provider.py` es una utilidad **manual y opt-in** para
 validar una credencial real: no lo ejecuta CI y nunca imprime la clave. Se ejecuta

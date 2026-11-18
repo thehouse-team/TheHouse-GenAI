@@ -7,6 +7,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Request
 
 from thehouse_genai.api.auth import require_service_key
+from thehouse_genai.api.rate_limit import enforce_rate_limit
 from thehouse_genai.application.explain_match import EXPLAIN_MATCH_PROMPT_VERSION, ExplainMatch
 from thehouse_genai.domain.match_explanation import ExplainMatchRequest, ExplainMatchResponse
 from thehouse_genai.providers.base import GenerativeAiProvider
@@ -14,7 +15,7 @@ from thehouse_genai.providers.base import GenerativeAiProvider
 router = APIRouter(
     prefix="/api/v1/generative",
     tags=["generative"],
-    dependencies=[Depends(require_service_key)],
+    dependencies=[Depends(require_service_key), Depends(enforce_rate_limit)],
 )
 
 

@@ -43,6 +43,31 @@ class Settings(BaseSettings):
     cors_origins: Annotated[list[str], NoDecode] = Field(default_factory=list)
     max_request_bytes: int = Field(default=65_536, ge=1_024, le=10_485_760)
 
+    # Process-local rate limiting (spec 005). The state is per process: with several
+    # replicas the effective limit is N times the configured one; see spec 005.
+    rate_limit_enabled: bool = Field(
+        default=True,
+        validation_alias="GENAI_RATE_LIMIT_ENABLED",
+    )
+    rate_limit_requests: int = Field(
+        default=60,
+        ge=1,
+        le=100_000,
+        validation_alias="GENAI_RATE_LIMIT_REQUESTS",
+    )
+    rate_limit_window_seconds: int = Field(
+        default=60,
+        ge=1,
+        le=86_400,
+        validation_alias="GENAI_RATE_LIMIT_WINDOW_SECONDS",
+    )
+    rate_limit_max_clients: int = Field(
+        default=1_000,
+        ge=1,
+        le=1_000_000,
+        validation_alias="GENAI_RATE_LIMIT_MAX_CLIENTS",
+    )
+
     # Service-to-service authentication for the generative endpoints (spec 003,
     # rotation added in 005). Only the GENAI_ prefixed variables are read from the
     # environment; the field names are mapped below for explicit construction.
@@ -113,20 +138,28 @@ class Settings(BaseSettings):
 
     @model_validator(mode="before")
     @classmethod
-    def _accept_service_key_kwargs(cls, data: Any) -> Any:
-        """Allow the service key kwargs without exposing generic env vars.
+    def _accept_aliased_kwargs(cls, data: Any) -> Any:
+        """Map field names to their `GENAI_` aliases for explicit construction.
 
-        Only the `GENAI_`-prefixed variables are valid environment sources; the field
-        names are mapped here so tests and explicit construction can still use them.
+        Only the `GENAI_`-prefixed variables are valid environment sources; field names
+        are accepted here so tests and explicit construction can still use them.
         """
 
         if not isinstance(data, dict):
             return data
         mapped = dict(data)
-        for field_name, env_name in (
-            ("service_key", "GENAI_SERVICE_KEY"),
-            ("service_key_previous", "GENAI_SERVICE_KEY_PREVIOUS"),
+        aliases: dict[str, str] = {
+            "service_key": "GENAI_SERVICE_KEY",
+            "service_key_previous": "GENAI_SERVICE_KEY_PREVIOUS",
+        }
+        for field_name in (
+            "rate_limit_enabled",
+            "rate_limit_requests",
+            "rate_limit_window_seconds",
+            "rate_limit_max_clients",
         ):
+            aliases[field_name] = f"GENAI_{field_name.upper()}"
+        for field_name, env_name in aliases.items():
             if field_name in mapped and env_name not in mapped:
                 mapped[env_name] = mapped[field_name]
         return mapped
