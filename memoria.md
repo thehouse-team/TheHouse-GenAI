@@ -18,7 +18,7 @@ Smart Match, no consulta propiedades y no contiene Mobile.
 | 004-natural-language-search | PLANNED | Parseo de búsqueda a filtros, nunca propiedades |
 | 005-security | IMPLEMENTED | Autenticación de servicio endurecida, PII, prompt injection |
 | 006-moderation | IMPLEMENTED | Política y moderación de la salida generativa (alcance A) |
-| 007-observability | ACTIVE | Métricas en memoria, presupuesto diario, endpoints internos, SLOs y alertas documentadas |
+| 007-observability | IMPLEMENTED | Métricas en memoria, presupuesto diario, endpoints internos, SLOs y alertas documentadas |
 | 008-testing | PLANNED | Estrategia completa y contract tests (transversal, cierra en G09) |
 | 009-ci-cd | PLANNED | Pipeline completo y despliegue futuro |
 | 010-integration-thehouse | PLANNED | Contratos y operación con Backend |
@@ -34,7 +34,7 @@ Smart Match, no consulta propiedades y no contiene Mobile.
 | G04 | 003-smart-match-explanation | Endpoint explain-match con auth mínima de servicio |
 | G05 | 005-security | Endurecimiento de seguridad, PII, prompt injection |
 | G06 | 006-moderation | Moderación de la salida generativa (IMPLEMENTED) |
-| G07 | 007-observability | Observabilidad, métricas y SLOs |
+| G07 | 007-observability | Observabilidad, métricas y SLOs (IMPLEMENTED) |
 | G08 | 004-natural-language-search | Endpoint parse-search con auth endurecida |
 | G09 | 010-integration-thehouse | Integración con Backend; cierra 008-testing |
 | G10 | 009-ci-cd | Pipeline completo y despliegue |
@@ -45,12 +45,15 @@ cobertura) se acumulan en cada fase y la spec se cierra en G09, junto con
 
 ## Spec activa
 
-`007-observability` (G07) está **ACTIVE** desde el 2026-11-18 sobre la rama
-`feature/observability`, con el plan aprobado y las decisiones 1–9 registradas abajo. Su
-alcance: métricas en memoria, presupuesto diario configurable de proveedor, endpoints
-internos protegidos, correlación por `request_id`, SLOs y alertas documentadas para G10.
-Sin dependencias nuevas (incluido `tzdata`) y sin cambios en los contratos de health ni
-de `explain-match`.
+Ninguna. `007-observability` (G07) se cerró como **IMPLEMENTED** el 2026-11-18 sobre la
+rama `feature/observability` con las decisiones 1–9 aplicadas: métricas en memoria con
+etiquetas cerradas e histograma, presupuesto diario desactivado por defecto con coste
+`Decimal`, endpoints internos con clave separada, correlación por `request_id` y
+SLOs/alertas documentadas para G10. Criterios verificados, gates en verde, 775 tests sin
+red, 7 commits y evidencia en `specs/007-observability/evidence.md`. Sin dependencias
+nuevas (incluido `tzdata`) y sin cambios en los contratos de health ni de `explain-match`.
+La prueba manual real de los endpoints internos queda pendiente de que el usuario la
+proporcione.
 
 `006-moderation` (G06) se cerró como `IMPLEMENTED` el 2026-11-18 sobre la rama
 `feature/moderation` con el **alcance A** aprobado: política `moderation_v1`, puerto de
@@ -76,7 +79,7 @@ sus criterios verificados, los gates en verde y la evidencia registrada en
 `specs/011-llm-provider/evidence.md`, incluido el smoke test manual ejecutado con una
 credencial real el 2026-11-16. `001-foundation`, `002-provider-abstraction`, 003 y 005
 permanecen `IMPLEMENTED` y el resto de specs, `PLANNED`. Solo una spec puede estar
-`ACTIVE` a la vez; ahora mismo `007-observability` es la única `ACTIVE`.
+`ACTIVE` a la vez; ahora mismo ninguna lo está.
 
 ## Enmiendas de la constitución
 
@@ -344,8 +347,9 @@ Plan aprobado el 2026-11-18. Las nueve decisiones propuestas quedan aceptadas ta
 | 8 | `/internal/health/detail` siempre devuelve 200 con un campo `status`; no sustituye a los probes de G01. |
 | 9 | Filtro que inyecta `request_id` en los logs; nunca se envía a Gemini y `provider_model` nunca aparece en métricas. |
 
-Estas decisiones se aplican en los bloques B0–B7 y se documentan en el apéndice de
-`specs/007-observability/spec.md`.
+Estas decisiones se aplicaron íntegramente en los bloques B0–B7, se verificaron con 775
+tests sin red y se documentan en el apéndice de `specs/007-observability/spec.md` y en su
+`evidence.md` (incluidos los fallos intermedios y las desviaciones).
 
 ## Evidencia resumida
 
@@ -405,6 +409,16 @@ Estas decisiones se aplican en los bloques B0–B7 y se documentan en el apéndi
 - Rama `feature/security-hardening`: 8 commits (B0–B7 más el cierre documental).
 - Evidencia completa en `specs/005-security/evidence.md`.
 
+### 007-observability
+
+- `ruff check .`: sin hallazgos.
+- `mypy src`: sin errores (strict) en 32 archivos.
+- `pytest`: 775 tests aprobados, sin red (guard `block_network`), 1 warning heredado de
+  `TestClient` (deuda de 008).
+- Rama `feature/observability`: 7 commits (B0–B6; B7 documental sin commit).
+- Evidencia completa en `specs/007-observability/evidence.md`, incluida la prueba manual
+  real pendiente de los endpoints internos.
+
 ## Deuda y pendientes
 
 - `GENAI_API_KEY=` y `GENAI_MODEL=` vacíos quedaban como `SecretStr('')` y `''` en lugar
@@ -457,25 +471,32 @@ Estas decisiones se aplican en los bloques B0–B7 y se documentan en el apéndi
   métricas y alertas.
 - Deuda 006-(d): se mantiene el `StarletteDeprecationWarning` de `TestClient` con
   `httpx`; se revisa en 008. Es la misma deuda (e) ya registrada.
-- Observabilidad avanzada, contract tests e integración (007–010).
+- Contract tests e integración (008–010).
 - No hay despliegue. Hay una credencial de desarrollo en el entorno local, fuera del
   repositorio: la capa gratuita de Gemini se usa solo con prompts sintéticos.
 
-- Deuda 007-(a): el presupuesto diario y las métricas son por proceso; con N réplicas el
-  cupo efectivo es N× el configurado. En G10: activar el presupuesto y agregar métricas y
-  cupo global en Azure (API Management o store compartido, con spec aprobada).
-- Deuda 007-(b): el día del presupuesto usa UTC-6 fijo y no coincide con el reinicio de
-  la cuota de Gemini a medianoche hora del Pacífico; documentado y resuelto como fallback,
-  no como error.
+- Deuda 007-(a): métricas y presupuesto son por proceso; se pierden al reiniciar y con N
+  réplicas el cupo efectivo es N× el configurado. En G10: agregación en Azure Monitor y
+  cupo global en API Management o store compartido (spec aprobada).
+- Deuda 007-(b): checklist de despliegue G10 — `GENAI_BUDGET_ENABLED=true`,
+  `GENAI_TIMEOUT_SECONDS=6` (D18), configurar `GENAI_METRICS_KEY` y crear las alertas
+  documentadas en el apéndice B de `specs/007-observability/spec.md`.
+- Deuda 007-(c): el día del presupuesto es UTC-6 (México) y la cuota de Gemini se reinicia
+  a medianoche hora del Pacífico; los días no coinciden exactamente. El exceso degrada a
+  fallback, nunca a error.
+- Deuda 007-(d): los SLOs son valores iniciales; recalibrar con datos de staging en G10.
+- Deuda 007-(e): se mantiene el `StarletteDeprecationWarning` de `TestClient` con `httpx`;
+  se revisa en 008. Es la misma deuda (e)/006-(d) ya registrada.
 
 ## Próximo paso
 
-G07 = `007-observability` está en curso (B0 completado, B1 en curso): métricas en
-memoria, presupuesto diario, endpoints internos y SLOs documentados; la decisión de
-readiness del proveedor se resuelve con `/internal/health/detail` sin tocar los probes de
-G01, y se instrumentan los motivos `MODERATION_*` y `PROVIDER_ERROR` (deuda 006-(c)).
-Le siguen G08 (`004-natural-language-search`) y G09/G10, donde se aplican los timeouts
-de producción de D18, se activa el presupuesto (decisión 5) y se decide el despliegue
-(incluidos mTLS, HSTS/CSP, la cabecera `Server`, el rate limit global y la agregación de
-métricas, deudas (a) y (b) de 005 y 007-(a)). `004-natural-language-search` permanece
-`PLANNED`.
+G07 = `007-observability` quedó **IMPLEMENTED**: métricas en memoria, presupuesto diario,
+endpoints internos protegidos y SLOs documentados; la decisión de readiness del
+proveedor se resolvió con `/internal/health/detail` sin tocar los probes de G01, y se
+instrumentaron los motivos `MODERATION_*` y `PROVIDER_ERROR` (deuda 006-(c)).
+
+**Próximo paso: G08 = `004-natural-language-search`**, que activará esa spec y añadirá
+`parse-search` con autenticación endurecida. G09/G10 aplicarán los timeouts de producción
+de D18, activarán el presupuesto (deuda 007-(b)) y decidirán el despliegue (mTLS,
+HSTS/CSP, cabecera `Server`, rate limit global y agregación de métricas; deudas (a) y (b)
+de 005 y 007-(a)). `004-natural-language-search` permanece `PLANNED` hasta G08.

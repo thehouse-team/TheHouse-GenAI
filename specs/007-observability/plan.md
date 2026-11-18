@@ -1,6 +1,6 @@
 # Plan — 007-observability Observabilidad
 
-- **Estado:** ACTIVE
+- **Estado:** IMPLEMENTED
 - **Depende de:** 001-foundation, 002-provider-abstraction, 003-smart-match-explanation,
   005-security, 006-moderation, 011-llm-provider
 - **Plan aprobado:** 2026-11-18 (decisiones 1–9 en `memoria.md`)

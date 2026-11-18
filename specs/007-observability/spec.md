@@ -1,6 +1,6 @@
 # 007-observability — Observabilidad
 
-- **Estado:** ACTIVE
+- **Estado:** IMPLEMENTED
 - **Depende de:** 001-foundation, 002-provider-abstraction, 003-smart-match-explanation,
   005-security, 006-moderation, 011-llm-provider
 - **Habilita:** 009-ci-cd, 010-integration-thehouse
@@ -62,7 +62,9 @@ Application Insights; esa integración queda **documentada, no implementada**, e
 - **RF-01:** todo log usa JSON con timestamp, nivel, logger, mensaje y `request_id` cuando
   existe contexto de request; solo se emiten los campos de la allowlist.
 - **RF-02:** las métricas cubren latencia, errores por código, proveedor, moderación,
-  seguridad y saturación, con etiquetas de enum cerrado.
+  seguridad y saturación, con etiquetas de enum cerrado. La latencia se separa por
+  `status_class` (`2xx`, `4xx`, `5xx`, `other`) para que los rechazos rápidos no distorsionen
+  el SLO.
 - **RF-03:** nunca se registran ni se exponen prompts, respuestas, tokens de credencial,
   headers, bodies ni PII. Los contadores de tokens de Gemini son metadatos agregados.
 - **RF-04:** el `request_id` se correlaciona en todos los logs de una request Through el
@@ -132,11 +134,17 @@ Valores iniciales a recalibrar con datos de staging (decisión 7):
 | SLO | Objetivo inicial | Medición |
 | --- | --- | --- |
 | Disponibilidad HTTP | ≥ 99,9% de respuestas no-5xx en 30 días | el fallback 200 no cuenta como caída |
-| Latencia `explain-match` | p95 ≤ 2,5 s, p99 ≤ 6,5 s en 28 días | p99 acotado por el timeout de producción D18 |
+| Latencia `explain-match` | p95 ≤ 2,5 s, p99 ≤ 6,5 s en 28 días | Solo respuestas **2xx** (`status_class=2xx`); p99 acotado por D18 |
 | Fallback inesperado | ≤ 2% (`PROVIDER_ERROR`, `INVALID_JSON`, `MODERATION_UNAVAILABLE`) | sobre peticiones válidas |
 | Moderación | `MODERATION_BLOCKED` ≤ 1% | cierra deuda 006-(c) |
 | Saturación propia | 429 ≤ 1% de peticiones válidas | — |
 | Presupuesto | aviso al 80%; alerta ante el primer `BUDGET_EXHAUSTED` | — |
+
+El SLO de latencia **solo** considera la serie `status_class=2xx` de
+`http_request_duration_ms` en `explain-match`. Las series `4xx` (por ejemplo un 401
+casi instantáneo) y `5xx` se reportan aparte y no entran en el cálculo de p50/p95: la
+prueba manual del 2026-11-18 mostró que mezclarlas deformaba el p50 hasta 50 ms. La
+etiqueta es de enum cerrado, por lo que la cardinalidad sigue acotada.
 
 Alertas a documentar para Application Insights / Azure Monitor en G10, **sin implementar
 aquí**: p95 > 2,5 s por 10 min; 5xx > 0,1% por 5 min; fallback inesperado > 2% por 15 min;
@@ -161,5 +169,7 @@ capa gratuita. Requiere exportar los contadores a `customMetrics` en G10.
 
 ## Fuera de esta spec
 
-Esta spec permanece `ACTIVE` hasta su cierre. Las tareas de implementación y evidencia
-viven en `plan.md`, `task.md`, `checklist.md` y `evidence.md`.
+Spec cerrada como `IMPLEMENTED` el 2026-11-18 con criterios verificados, gates en verde y
+evidencia registrada. Las tareas y resultados viven en `plan.md`, `task.md`,
+`checklist.md` y `evidence.md`. La prueba manual real de los endpoints internos queda
+pendiente de que el usuario la proporcione.
