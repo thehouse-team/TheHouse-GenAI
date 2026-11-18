@@ -12,9 +12,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from thehouse_genai import __version__
 from thehouse_genai.api.errors import install_exception_handlers
 from thehouse_genai.api.middleware import RequestContextMiddleware, RequestSizeLimitMiddleware
-from thehouse_genai.api.routes import health
+from thehouse_genai.api.routes import generative, health
 from thehouse_genai.infrastructure.config import Settings, get_settings
 from thehouse_genai.infrastructure.logging import configure_logging
+from thehouse_genai.providers.base import GenerativeAiProvider
+from thehouse_genai.providers.factory import (
+    ProviderConfigurationError,
+    UnsupportedProviderError,
+    build_provider,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +48,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     app.state.settings = resolved
 
+    try:
+        provider: GenerativeAiProvider | None = build_provider(resolved)
+    except (UnsupportedProviderError, ProviderConfigurationError):
+        logger.error("provider.not_configured")
+        provider = None
+    app.state.provider = provider
+
     app.add_middleware(RequestSizeLimitMiddleware, max_bytes=resolved.max_request_bytes)
     app.add_middleware(RequestContextMiddleware)
     if resolved.cors_origins:
@@ -55,4 +68,5 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     install_exception_handlers(app)
     app.include_router(health.router)
+    app.include_router(generative.router)
     return app
