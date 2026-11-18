@@ -47,6 +47,7 @@ class HttpMethod(StrEnum):
     DELETE = "DELETE"
     HEAD = "HEAD"
     OPTIONS = "OPTIONS"
+    OTHER = "other"
 
 
 class EndpointPath(StrEnum):
@@ -75,6 +76,7 @@ class StatusCode(StrEnum):
     TOO_MANY_REQUESTS = "429"
     INTERNAL_ERROR = "500"
     SERVICE_UNAVAILABLE = "503"
+    OTHER = "other"
 
 
 class CallOutcome(StrEnum):

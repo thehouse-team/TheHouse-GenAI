@@ -22,6 +22,7 @@ from thehouse_genai.domain.moderation import MAX_TEXT_CHARS as MODERATION_MAX_TE
 from thehouse_genai.domain.moderation import ModerationDecision
 from thehouse_genai.infrastructure.config import Settings, get_settings
 from thehouse_genai.infrastructure.logging import configure_logging
+from thehouse_genai.infrastructure.metrics import MetricsRegistry
 from thehouse_genai.providers.base import GenerativeAiProvider
 from thehouse_genai.providers.factory import (
     ProviderConfigurationError,
@@ -70,6 +71,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         lifespan=lifespan,
     )
     app.state.settings = resolved
+    metrics = MetricsRegistry()
+    app.state.metrics = metrics
     app.state.rate_limiter = InMemoryRateLimiter(
         requests=resolved.rate_limit_requests,
         window_seconds=resolved.rate_limit_window_seconds,
@@ -95,7 +98,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.moderation_provider = moderation_provider
 
     app.add_middleware(RequestSizeLimitMiddleware, max_bytes=resolved.max_request_bytes)
-    app.add_middleware(RequestContextMiddleware)
+    app.add_middleware(RequestContextMiddleware, metrics=metrics)
     if resolved.cors_origins:
         app.add_middleware(
             CORSMiddleware,
