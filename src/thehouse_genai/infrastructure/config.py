@@ -7,6 +7,7 @@ Invalid values raise a clear validation error at startup; secrets use `SecretStr
 from __future__ import annotations
 
 import json
+from decimal import Decimal
 from functools import lru_cache
 from typing import Annotated, Any, Literal, Self
 
@@ -68,6 +69,38 @@ class Settings(BaseSettings):
         validation_alias="GENAI_RATE_LIMIT_MAX_CLIENTS",
     )
 
+    # Daily provider budget (spec 007). Disabled by default: activation is a deployment
+    # decision of G10. Token limits of None mean "no limit"; rates are per million tokens.
+    budget_enabled: bool = Field(
+        default=False,
+        validation_alias="GENAI_BUDGET_ENABLED",
+    )
+    daily_call_limit: int = Field(
+        default=400,
+        ge=1,
+        validation_alias="GENAI_DAILY_CALL_LIMIT",
+    )
+    daily_input_token_limit: int | None = Field(
+        default=None,
+        ge=0,
+        validation_alias="GENAI_DAILY_INPUT_TOKEN_LIMIT",
+    )
+    daily_output_token_limit: int | None = Field(
+        default=None,
+        ge=0,
+        validation_alias="GENAI_DAILY_OUTPUT_TOKEN_LIMIT",
+    )
+    cost_input_per_million: Decimal = Field(
+        default=Decimal("0"),
+        ge=0,
+        validation_alias="GENAI_COST_INPUT_PER_MILLION",
+    )
+    cost_output_per_million: Decimal = Field(
+        default=Decimal("0"),
+        ge=0,
+        validation_alias="GENAI_COST_OUTPUT_PER_MILLION",
+    )
+
     # Service-to-service authentication for the generative endpoints (spec 003,
     # rotation added in 005). Only the GENAI_ prefixed variables are read from the
     # environment; the field names are mapped below for explicit construction.
@@ -79,6 +112,13 @@ class Settings(BaseSettings):
     service_key_previous: SecretStr | None = Field(
         default=None,
         validation_alias="GENAI_SERVICE_KEY_PREVIOUS",
+    )
+
+    # Separate credential for internal diagnostic endpoints (spec 007, decision 2).
+    # Only the GENAI_ prefixed variable is read; never log or serialize it.
+    metrics_key: SecretStr | None = Field(
+        default=None,
+        validation_alias="GENAI_METRICS_KEY",
     )
 
     # Provider configuration (spec 002, extended by spec 011). "gemini" is accepted
@@ -151,12 +191,19 @@ class Settings(BaseSettings):
         aliases: dict[str, str] = {
             "service_key": "GENAI_SERVICE_KEY",
             "service_key_previous": "GENAI_SERVICE_KEY_PREVIOUS",
+            "metrics_key": "GENAI_METRICS_KEY",
         }
         for field_name in (
             "rate_limit_enabled",
             "rate_limit_requests",
             "rate_limit_window_seconds",
             "rate_limit_max_clients",
+            "budget_enabled",
+            "daily_call_limit",
+            "daily_input_token_limit",
+            "daily_output_token_limit",
+            "cost_input_per_million",
+            "cost_output_per_million",
         ):
             aliases[field_name] = f"GENAI_{field_name.upper()}"
         for field_name, env_name in aliases.items():
@@ -164,7 +211,7 @@ class Settings(BaseSettings):
                 mapped[env_name] = mapped[field_name]
         return mapped
 
-    @field_validator("service_key", "service_key_previous", mode="before")
+    @field_validator("service_key", "service_key_previous", "metrics_key", mode="before")
     @classmethod
     def _normalize_service_keys(cls, value: Any) -> Any:
         """Treat a blank service key as unset instead of an empty secret."""

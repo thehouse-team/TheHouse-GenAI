@@ -16,10 +16,57 @@ from thehouse_genai.api.request_context import (
     request_id_ctx,
     sanitize_request_id,
 )
+from thehouse_genai.application.metrics_port import (
+    EndpointPath,
+    HttpMethod,
+    MetricName,
+    MetricsRecorder,
+    StatusClass,
+    StatusCode,
+)
 
 logger = logging.getLogger(__name__)
 
 _PATH_ID_PATTERN = re.compile(r"\b[0-9a-fA-F]{8,}\b")
+
+
+def _metric_path(path: str) -> EndpointPath:
+    """Map a raw path to the closed vocabulary; IDs and unknown routes become `other`."""
+
+    try:
+        return EndpointPath(path)
+    except ValueError:
+        return EndpointPath.OTHER
+
+
+def _metric_method(method: str) -> HttpMethod:
+    """Map an HTTP method to the closed vocabulary."""
+
+    try:
+        return HttpMethod(method)
+    except ValueError:
+        return HttpMethod.OTHER
+
+
+def _metric_status(status_code: int) -> StatusCode:
+    """Map a status code to the closed vocabulary."""
+
+    try:
+        return StatusCode(str(status_code))
+    except ValueError:
+        return StatusCode.OTHER
+
+
+def _metric_status_class(status_code: int) -> StatusClass:
+    """Group a status code into the closed latency series; 1xx/3xx become `other`."""
+
+    if 200 <= status_code < 300:
+        return StatusClass.SUCCESS
+    if 400 <= status_code < 500:
+        return StatusClass.CLIENT_ERROR
+    if 500 <= status_code < 600:
+        return StatusClass.SERVER_ERROR
+    return StatusClass.OTHER
 
 
 class SecurityHeadersMiddleware:
@@ -48,10 +95,11 @@ class SecurityHeadersMiddleware:
 
 
 class RequestContextMiddleware:
-    """Attach a safe request ID, echo it, and emit one structured access log."""
+    """Attach a safe request ID, echo it, log it and record request metrics."""
 
-    def __init__(self, app: ASGIApp) -> None:
+    def __init__(self, app: ASGIApp, *, metrics: MetricsRecorder) -> None:
         self.app = app
+        self._metrics = metrics
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http":
@@ -75,6 +123,23 @@ class RequestContextMiddleware:
         try:
             await self.app(scope, receive, send_with_request_id)
         finally:
+            duration_ms = round((perf_counter() - started) * 1000, 2)
+            method = _metric_method(scope.get("method", ""))
+            path = _metric_path(scope.get("path", ""))
+            status = _metric_status(status_code)
+            self._metrics.increment(
+                MetricName.HTTP_REQUESTS_TOTAL,
+                method=method,
+                path=path,
+                status_code=status,
+            )
+            self._metrics.observe(
+                MetricName.HTTP_REQUEST_DURATION_MS,
+                duration_ms,
+                method=method,
+                path=path,
+                status_class=_metric_status_class(status_code),
+            )
             logger.info(
                 "http.request.completed",
                 extra={
@@ -82,7 +147,7 @@ class RequestContextMiddleware:
                     "method": scope.get("method", ""),
                     "path": _PATH_ID_PATTERN.sub("{id}", scope.get("path", "")),
                     "status_code": status_code,
-                    "duration_ms": round((perf_counter() - started) * 1000, 2),
+                    "duration_ms": duration_ms,
                 },
             )
             request_id_ctx.reset(token)

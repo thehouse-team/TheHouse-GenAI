@@ -13,7 +13,9 @@ corpus de inyección, headers de seguridad y logging, sin cambiar el contrato de
 `explain-match`. G06 (`006-moderation`) quedó **IMPLEMENTADA** con alcance A: política
 local `moderation_v1`, puerto de moderación con fake y moderador determinista para la
 salida, y `safetySettings` en Gemini. Sin endpoint de contenido de usuarios y sin
-llamadas extra al proveedor.
+llamadas extra al proveedor. G07 (`007-observability`) quedó **IMPLEMENTADO**: métricas en
+memoria, presupuesto diario configurable, endpoints internos protegidos y SLOs/alertas
+documentados para G10, sin dependencias nuevas ni cambios en los contratos.
 
 G02 define el puerto `GenerativeAiProvider`, sus DTOs inmutables, la taxonomía de
 errores, el guard central de timeout y límite de entrada, un `FakeProvider`
@@ -94,6 +96,31 @@ hay nuevo campo ni código de error. Como refuerzo del proveedor, `generateConte
 registran decisión, categoría y versión de política, nunca el texto moderado. El contrato
 `{explanation, generated, promptVersion}` no cambia.
 
+## Observabilidad y endpoints internos (G07)
+
+Los logs JSON se correlacionan por `request_id`, que nunca se envía a Gemini. Las
+métricas viven en memoria del proceso: peticiones por endpoint/status, latencia con
+buckets fijos (p50 y p95 aproximados), llamadas y tokens del proveedor, fallbacks por
+motivo, decisiones de moderación, rechazos 401/429 y coste estimado. La latencia se separa
+por `status_class` (`2xx`, `4xx`, `5xx`, `other`) y el SLO se mide solo sobre `2xx`, para
+que los rechazos rápidos no distorsionen el p50/p95. Los nombres y el esquema del snapshot
+son estables (`schema_version: "1"`).
+
+- `GET /internal/metrics`: snapshot JSON con contadores, histogramas y gauges.
+- `GET /internal/health/detail`: siempre `200` con `status` (`ok` o `degraded`),
+  `provider.configured`, `moderator.configured` y `budget` (`enabled`, `exhausted`,
+  `resets_at`). Es diagnóstico; no sustituye a `/health/ready`.
+
+Ambos exigen la cabecera `X-Metrics-Key`, configurada en `GENAI_METRICS_KEY` (distinta de
+la clave de servicio). Sin clave, con clave inválida o con la clave de servicio responden
+`401` con el sobre de error estándar. Nunca exponen prompts, respuestas, ids de modelo,
+`request_id`, fingerprints, claves ni mensajes internos.
+
+El presupuesto diario está **desactivado por defecto** (`GENAI_BUDGET_ENABLED=false`).
+Al agotarse, `explain-match` responde `200` con la plantilla de fallback y el motivo
+`BUDGET_EXHAUSTED` en logs/métricas, sin llamar al proveedor. El día usa UTC-6 fijo; la
+cuota de Gemini se reinicia a medianoche hora del Pacífico, por lo que los días no
+coinciden exactamente.
 
 ## Ejecución local
 
@@ -144,6 +171,13 @@ por REST con `httpx`. Su configuración es por entorno:
 | `GENAI_RATE_LIMIT_REQUESTS` | No | Peticiones por ventana y cliente; 60 por defecto |
 | `GENAI_RATE_LIMIT_WINDOW_SECONDS` | No | Duración de la ventana; 60 s por defecto |
 | `GENAI_RATE_LIMIT_MAX_CLIENTS` | No | Máximo de ventanas rastreadas; 1000 por defecto |
+| `GENAI_METRICS_KEY` | Sí, para endpoints internos | Secreto para `X-Metrics-Key`; `SecretStr`, distinto de la clave de servicio |
+| `GENAI_BUDGET_ENABLED` | No | Presupuesto diario; `false` por defecto, activar en despliegue (G10) |
+| `GENAI_DAILY_CALL_LIMIT` | No | Llamadas al proveedor por día local; 400 por defecto |
+| `GENAI_DAILY_INPUT_TOKEN_LIMIT` | No | Tope de tokens de entrada; no definir = sin límite |
+| `GENAI_DAILY_OUTPUT_TOKEN_LIMIT` | No | Tope de tokens de salida; no definir = sin límite |
+| `GENAI_COST_INPUT_PER_MILLION` | No | Tarifa de entrada por millón de tokens; 0 en capa gratuita |
+| `GENAI_COST_OUTPUT_PER_MILLION` | No | Tarifa de salida por millón de tokens; 0 en capa gratuita |
 
 El script `scripts/smoke_provider.py` es una utilidad **manual y opt-in** para
 validar una credencial real: no lo ejecuta CI y nunca imprime la clave. Se ejecuta

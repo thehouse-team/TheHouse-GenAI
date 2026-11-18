@@ -1,29 +1,55 @@
 # Tareas — 007-observability Observabilidad
 
-- **Estado:** PLANNED
+- **Estado:** IMPLEMENTED
+- **Plan aprobado:** 2026-11-18 (decisiones 1–9 en `memoria.md`)
 
-> No iniciar hasta que la spec sea la activa y su plan esté aprobado.
+> Todas las tareas tienen evidencia real en `evidence.md`.
 
-## Diseño
+## B0 — Diseño y activación
 
-- [ ] Aprobar schema de logs y métricas.
-- [ ] Definir SLOs, alertas y retención.
+- [x] Activar 007 en `memoria.md` y en los cinco archivos del SDD.
+- [x] Ampliar dependencias a 001, 002, 003, 005, 006 y 011.
+- [x] Documentar esquema de logs, SLOs, alertas G10, limitaciones y decisiones 1–9.
+- [x] Gates en verde y commit `docs: activate spec 007 observability`.
 
-## Implementación
+## B1 — Núcleo de métricas
 
-- [ ] Instrumentar middleware y casos de uso.
-- [ ] Instrumentar proveedor y tokens.
-- [ ] Implementar propagación de contexto.
+- [x] `application/metrics_port.py`: enums cerrados, `MetricsRecorder`, snapshot inmutable.
+- [x] `infrastructure/metrics.py`: `MetricsRegistry` con lock, reloj inyectable,
+      contadores e histograma con p50/p95 aproximados.
+- [x] `tests/test_metrics_registry.py`: incrementos, etiquetas inválidas, histograma,
+      percentiles, concurrencia, snapshot y JSON.
+- [x] Verificar `test_import_boundaries.py`.
 
-## Pruebas y cierre
+## B2 — Instrumentación HTTP
 
-- [ ] Añadir pruebas de métricas y no-fuga.
-- [ ] Validar dashboards/alertas en staging.
-- [ ] Actualizar evidencia.
+- [x] Medir peticiones, status y latencia por endpoint normalizado.
 
-## Cierre
+## B3 — Instrumentación de aplicación y correlación
 
-- [ ] Actualizar `checklist.md` y `evidence.md` con resultados reales.
-- [ ] Ejecutar `ruff check .`, `mypy src` y `pytest`.
-- [ ] Revisar seguridad y ausencia de secretos/PII.
-- [ ] Cambiar el estado a IMPLEMENTED solo al cumplir todo.
+- [x] Medir llamadas al proveedor, tokens, `generated`, `fallback_reason` y moderación.
+- [x] Inyectar `request_id` en logs por filtro, sin enviarlo a Gemini.
+
+## B4 — Presupuesto diario
+
+- [x] `Settings` con límite de llamadas, límites de tokens y tarifas de coste.
+- [x] `DailyBudget` con UTC-6 fijo, consumo controlado y `BUDGET_EXHAUSTED`.
+- [x] Coste estimado con `Decimal`; sin dependencias nuevas.
+
+## B5 — Endpoints internos
+
+- [x] `GET /internal/metrics` y `GET /internal/health/detail` con `GENAI_METRICS_KEY`.
+- [x] Sin `provider_model`, sin contenido, sin stack traces.
+
+## B6 — No-fuga
+
+- [x] Pruebas de ausencia de contenido, credenciales y PII en logs y métricas.
+- [x] Cardinalidad acotada y fronteras de imports reforzadas.
+
+## B7 — Pruebas y cierre
+
+- [x] SLOs y alertas documentados para G10 (sin implementación de APM).
+- [x] Actualizar `checklist.md` y `evidence.md` con resultados reales.
+- [x] Ejecutar `ruff check .`, `mypy src` y `pytest`.
+- [x] Revisar seguridad y ausencia de secretos/PII.
+- [x] Cambiar el estado a `IMPLEMENTED` al cumplir todo.

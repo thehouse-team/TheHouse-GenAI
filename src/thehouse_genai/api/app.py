@@ -17,11 +17,13 @@ from thehouse_genai.api.middleware import (
     SecurityHeadersMiddleware,
 )
 from thehouse_genai.api.rate_limit import InMemoryRateLimiter
-from thehouse_genai.api.routes import generative, health
+from thehouse_genai.api.routes import generative, health, internal
 from thehouse_genai.domain.moderation import MAX_TEXT_CHARS as MODERATION_MAX_TEXT_CHARS
 from thehouse_genai.domain.moderation import ModerationDecision
+from thehouse_genai.infrastructure.budget import DailyBudget
 from thehouse_genai.infrastructure.config import Settings, get_settings
 from thehouse_genai.infrastructure.logging import configure_logging
+from thehouse_genai.infrastructure.metrics import MetricsRegistry
 from thehouse_genai.providers.base import GenerativeAiProvider
 from thehouse_genai.providers.factory import (
     ProviderConfigurationError,
@@ -70,6 +72,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         lifespan=lifespan,
     )
     app.state.settings = resolved
+    metrics = MetricsRegistry()
+    app.state.metrics = metrics
+    budget = DailyBudget(
+        enabled=resolved.budget_enabled,
+        call_limit=resolved.daily_call_limit,
+        input_token_limit=resolved.daily_input_token_limit,
+        output_token_limit=resolved.daily_output_token_limit,
+        cost_input_per_million=resolved.cost_input_per_million,
+        cost_output_per_million=resolved.cost_output_per_million,
+    )
+    app.state.budget = budget
     app.state.rate_limiter = InMemoryRateLimiter(
         requests=resolved.rate_limit_requests,
         window_seconds=resolved.rate_limit_window_seconds,
@@ -92,17 +105,26 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     except Exception:
         logger.error("moderation.not_configured")
         moderation_provider = _BlockingModerator()
+        app.state.moderator_configured = False
+    else:
+        app.state.moderator_configured = True
     app.state.moderation_provider = moderation_provider
 
     app.add_middleware(RequestSizeLimitMiddleware, max_bytes=resolved.max_request_bytes)
-    app.add_middleware(RequestContextMiddleware)
+    app.add_middleware(RequestContextMiddleware, metrics=metrics)
     if resolved.cors_origins:
         app.add_middleware(
             CORSMiddleware,
             allow_origins=resolved.cors_origins,
             allow_credentials=False,
             allow_methods=["GET", "POST", "OPTIONS"],
-            allow_headers=["Authorization", "Content-Type", "X-Request-ID", "X-Service-Key"],
+            allow_headers=[
+                "Authorization",
+                "Content-Type",
+                "X-Request-ID",
+                "X-Service-Key",
+                "X-Metrics-Key",
+            ],
         )
     # Added last so it wraps every other middleware, including the size limiter.
     app.add_middleware(SecurityHeadersMiddleware)
@@ -110,4 +132,5 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     install_exception_handlers(app)
     app.include_router(health.router)
     app.include_router(generative.router)
+    app.include_router(internal.router)
     return app
