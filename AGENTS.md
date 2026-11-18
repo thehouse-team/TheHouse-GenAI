@@ -10,8 +10,9 @@ otros repositorios de TheHouse; este contexto es el contrato de integración ini
 
 - Implementar únicamente la spec activa. La spec activa es la marcada como `ACTIVE` en
   `memoria.md`.
-- No implementar endpoints de specs en estado `PLANNED` (hoy `parse-search`) ni nuevos
-  proveedores LLM reales; el adaptador real existe desde `011-llm-provider`.
+- No implementar endpoints de specs en estado `PLANNED` ni nuevos proveedores LLM reales;
+  el adaptador real existe desde `011-llm-provider`. La spec activa es
+  `004-natural-language-search`, así que `parse-search` sí puede implementarse en G08.
 - No calcular Smart Match, consultar propiedades ni duplicar lógica del Backend.
 - No incluir Mobile, autenticación de usuarios ni secretos reales.
 - No añadir Docker, bases de datos ni servicios externos sin una spec aprobada.
@@ -48,8 +49,8 @@ uvicorn thehouse_genai.main:app --reload
 ```text
 src/thehouse_genai/
   api/            HTTP, middleware, errores, health
-  application/    casos de uso (spec 003)
-  domain/         contratos e invariantes (spec 003)
+  application/    casos de uso (specs 003 y 004)
+  domain/         contratos e invariantes (specs 003 y 004)
   providers/      puerto LLM, DTOs y fake (spec 002); adaptador real (spec 011)
   infrastructure/ configuración, logging
 tests/            unitarias e integración con TestClient

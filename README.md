@@ -30,7 +30,9 @@ la capa gratuita, con prompts sintéticos.
 
 El roadmap por fases (G01–G10) y el estado de cada spec están en `memoria.md`. El
 contrato de `explain-match` está aprobado con Backend y se implementa en G04;
-`parse-search` sigue planificado en `specs/` y todavía no se implementa.
+`parse-search` está en curso en G08 (`004-natural-language-search`, spec activa): extrae
+filtros del texto del estudiante, nunca devuelve propiedades y el Backend valida los
+filtros contra sus catálogos antes de buscar.
 
 ## Endpoint explain-match
 

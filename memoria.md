@@ -15,7 +15,7 @@ Smart Match, no consulta propiedades y no contiene Mobile.
 | 001-foundation | IMPLEMENTED | Servicio mínimo, health, config, seguridad base, tests, CI |
 | 002-provider-abstraction | IMPLEMENTED | Puerto `GenerativeAiProvider`, DTOs, errores, fake y factory (offline) |
 | 003-smart-match-explanation | IMPLEMENTED | Explicación de match sin alterar hechos, con auth mínima de servicio |
-| 004-natural-language-search | PLANNED | Parseo de búsqueda a filtros, nunca propiedades |
+| 004-natural-language-search | ACTIVE | Parseo de búsqueda a filtros, nunca propiedades |
 | 005-security | IMPLEMENTED | Autenticación de servicio endurecida, PII, prompt injection |
 | 006-moderation | IMPLEMENTED | Política y moderación de la salida generativa (alcance A) |
 | 007-observability | IMPLEMENTED | Métricas en memoria, presupuesto diario, endpoints internos, SLOs y alertas documentadas |
@@ -45,7 +45,13 @@ cobertura) se acumulan en cada fase y la spec se cierra en G09, junto con
 
 ## Spec activa
 
-Ninguna. `007-observability` (G07) se cerró como **IMPLEMENTED** el 2026-11-18 sobre la
+`004-natural-language-search` (G08) está **ACTIVE** desde el 2026-11-18 sobre la rama
+`feature/natural-language-search`, con plan aprobado y las decisiones D1–D13 más los 4
+ajustes obligatorios registrados más abajo. Añade `POST /api/v1/generative/parse-search`
+con autenticación endurecida, reutilizando 003, 005, 006, 007 y 011 sin rehacerlos.
+Estado: B0 (documentación) completado; implementación en curso.
+
+`007-observability` (G07) se cerró como **IMPLEMENTED** el 2026-11-18 sobre la
 rama `feature/observability` con las decisiones 1–9 aplicadas: métricas en memoria con
 etiquetas cerradas e histograma, presupuesto diario desactivado por defecto con coste
 `Decimal`, endpoints internos con clave separada, correlación por `request_id` y
@@ -351,6 +357,39 @@ Estas decisiones se aplicaron íntegramente en los bloques B0–B7, se verificar
 tests sin red y se documentan en el apéndice de `specs/007-observability/spec.md` y en su
 `evidence.md` (incluidos los fallos intermedios y las desviaciones).
 
+## Decisiones tomadas en 004
+
+Plan aprobado el 2026-11-18. Contrato acordado con Backend (borrador ajustado): request
+`{query, locale}`; response `{filters{maxBudget, currency, university,
+essentialServices, petsAllowed, maxDistanceKm}, confidence, generated, promptVersion}`.
+
+| # | Decisión |
+| --- | --- |
+| D1 | Añadir `promptVersion` (`parse_search_v1`) a la respuesta. |
+| D2 | Opción C: GenAI emite solo lo respaldado por el texto; sin catálogos en el request ni en `Settings`. Backend mapea y valida. |
+| D3 | `query` de 1–500 caracteres; blank/oversized → 422; vago o solo-PII → 200 vacío + `low`. |
+| D4 | Solo `MXN`: `null` sin dinero, `MXN` con dinero, otra moneda explícita → descartar `maxBudget`, `currency=null` y bajar confianza. |
+| D5 | `petsAllowed` solo `true`; menciones negativas → `null`. |
+| D6 | `generated=false` si se podan todos los filtros. |
+| D7 | Confianza determinista: `grounded` cuenta `maxBudget`, `university`, `petsAllowed`, `maxDistanceKm` y cada servicio; `high` si ≥2 sin podas ni rango, `medium` si 1 o podas o rango, `low` en fallback/sin evidencia. |
+| D8 | Moderación de entrada fail-closed sin llamada al proveedor; extensión documentada del alcance A de 006. |
+| D9 | Fallback sin proveedor: filtros vacíos + `low`, sin extractor determinista. |
+| D10 | Métricas y logs: ruta cerrada `parse-search`, nuevos contadores y razones, filtro de `request_id` para `application.parse_search`. |
+| D11 | Extraer el guard de texto a `domain/text_guard.py` con re-exports; los tests de 003 siguen verdes sin cambios. |
+| D12 | Script manual nuevo `scripts/smoke_parse_search.py`, opt-in y nunca en CI. |
+| D13 | Rama `feature/natural-language-search`. |
+
+Ajustes obligatorios incorporados al diseño:
+
+1. `maxDistanceKm` (`Decimal | null`, ≥0, ≤100) con evidencia de `km`, `kms` o
+   `kilómetro(s)`. Minutos y cuadras no se convierten. Corpus: "a menos de 2 km de la
+   UTTT", "a 10 minutos de la uni" → `null`, "3 km" vs "3k".
+2. `university`: el valor devuelto debe aparecer en la query normalizada (sin acentos,
+   minúsculas, palabra completa) o ser la forma canónica de un alias presente. Tabla de
+   alias en código, por ahora UTTT y su nombre completo. Sin evidencia, se poda.
+3. "entre 2000 y 3000" → `maxBudget=3000` (tope del rango) con confianza máxima `medium`.
+4. No escribir caracteres CJK ni de ancho completo en ningún archivo.
+
 ## Evidencia resumida
 
 ### 001-foundation
@@ -435,7 +474,7 @@ tests sin red y se documentan en el apéndice de `specs/007-observability/spec.m
 - El precio por millón de tokens del modelo de desarrollo
   (`gemini-3.5-flash-lite`) queda por anotar desde la fuente de precios, y el modelo de
   producción se decide cuando se cree el proyecto de pago (G09).
-- Contratos y guardrails de parseo (004). Los de explicación (003) están cerrados.
+- Contratos y guardrails de parseo (004): en curso en G08 (spec ACTIVE). Los de explicación (003) están cerrados.
 - `005-security` quedó `IMPLEMENTED` en G05; la auth mínima de 003 sigue vigente y mTLS
   queda para G09/G10 (D2).
 - Deuda (a): el rate limit es por proceso; revisar el límite efectivo con varias
@@ -495,8 +534,8 @@ endpoints internos protegidos y SLOs documentados; la decisión de readiness del
 proveedor se resolvió con `/internal/health/detail` sin tocar los probes de G01, y se
 instrumentaron los motivos `MODERATION_*` y `PROVIDER_ERROR` (deuda 006-(c)).
 
-**Próximo paso: G08 = `004-natural-language-search`**, que activará esa spec y añadirá
-`parse-search` con autenticación endurecida. G09/G10 aplicarán los timeouts de producción
-de D18, activarán el presupuesto (deuda 007-(b)) y decidirán el despliegue (mTLS,
-HSTS/CSP, cabecera `Server`, rate limit global y agregación de métricas; deudas (a) y (b)
-de 005 y 007-(a)). `004-natural-language-search` permanece `PLANNED` hasta G08.
+G08 = `004-natural-language-search` está **en curso**: spec `ACTIVE`, B0 (documentación)
+completado sobre `feature/natural-language-search`; siguen los bloques B1–B7 hasta cerrar
+`parse-search`. G09/G10 aplicarán los timeouts de producción de D18, activarán el
+presupuesto (deuda 007-(b)) y decidirán el despliegue (mTLS, HSTS/CSP, cabecera `Server`,
+rate limit global y agregación de métricas; deudas (a) y (b) de 005 y 007-(a)).
