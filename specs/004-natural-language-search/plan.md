@@ -1,6 +1,6 @@
 # Plan — 004-natural-language-search Búsqueda en lenguaje natural
 
-- **Estado:** ACTIVE (plan aprobado el 2026-11-18)
+- **Estado:** IMPLEMENTED (plan aprobado el 2026-11-18)
 - **Depende de:** 001-foundation, 002-provider-abstraction, 003-smart-match-explanation,
   005-security, 006-moderation, 007-observability, 011-llm-provider
 

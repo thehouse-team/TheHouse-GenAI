@@ -16,6 +16,9 @@ salida, y `safetySettings` en Gemini. Sin endpoint de contenido de usuarios y si
 llamadas extra al proveedor. G07 (`007-observability`) quedó **IMPLEMENTADO**: métricas en
 memoria, presupuesto diario configurable, endpoints internos protegidos y SLOs/alertas
 documentados para G10, sin dependencias nuevas ni cambios en los contratos.
+G08 (`004-natural-language-search`) quedó **IMPLEMENTADO**: `parse-search` convierte una
+consulta en filtros validados, con la misma autenticación, moderación, PII y métricas que
+`explain-match`.
 
 G02 define el puerto `GenerativeAiProvider`, sus DTOs inmutables, la taxonomía de
 errores, el guard central de timeout y límite de entrada, un `FakeProvider`
@@ -30,9 +33,9 @@ la capa gratuita, con prompts sintéticos.
 
 El roadmap por fases (G01–G10) y el estado de cada spec están en `memoria.md`. El
 contrato de `explain-match` está aprobado con Backend y se implementa en G04;
-`parse-search` está en curso en G08 (`004-natural-language-search`, spec activa): extrae
-filtros del texto del estudiante, nunca devuelve propiedades y el Backend valida los
-filtros contra sus catálogos antes de buscar.
+`parse-search` quedó implementado en G08 (`004-natural-language-search`, spec
+IMPLEMENTADA): extrae filtros del texto del estudiante, nunca devuelve propiedades y el
+Backend valida los filtros contra sus catálogos antes de buscar.
 
 ## Endpoint explain-match
 
@@ -86,6 +89,50 @@ ese caso el código HTTP sigue siendo `200`. La plantilla no incluye el título 
 propiedad, porque ese texto lo escribe el arrendador y puede traer PII, ofensas o
 inyección. GenAI no calcula ni modifica `matchScore` y nunca devuelve detalles del
 proveedor. Ver `specs/003-smart-match-explanation/evidence.md` para las pruebas reales.
+
+## Endpoint parse-search (G08)
+
+`POST /api/v1/generative/parse-search` usa las mismas cabeceras `X-Service-Key`, rotación,
+rate limit y `Retry-After` que `explain-match`, con el mismo moderador y presupuesto
+diario. El cuerpo es `{query, locale}`; `query` mide 1–500 caracteres y `locale` solo
+admite `es-MX`. Los datos del estudiante se moderan, se redactan (correo, teléfono y URL)
+y se delimitan como no confiables antes del prompt. El modelo propone solo `filters`; los
+guardrails podan lo que no tenga evidencia en la query y calculan `confidence`.
+
+Request:
+
+```json
+{
+  "query": "Busco algo de máximo 3000 cerca de la UTTT con internet",
+  "locale": "es-MX"
+}
+```
+
+Response:
+
+```json
+{
+  "filters": {
+    "maxBudget": 3000,
+    "currency": "MXN",
+    "maxDistanceKm": null,
+    "university": "UTTT",
+    "essentialServices": ["internet"],
+    "petsAllowed": null
+  },
+  "confidence": "high",
+  "generated": true,
+  "promptVersion": "parse_search_v1"
+}
+```
+
+`maxBudget` y `maxDistanceKm` son números JSON (o `null`), nunca strings: Backend los lee
+como `decimal` con `System.Text.Json`. Internamente el servicio usa `Decimal`. Ante fallo
+del proveedor, JSON inválido, moderación adversa o presupuesto agotado, la respuesta sigue
+siendo `200` con todos los filtros vacíos, `confidence: "low"` y `generated: false`; no
+existe el `502`. La ruta `parse-search` tiene su propia serie de métricas HTTP. El script
+`scripts/smoke_parse_search.py` es manual y opt-in (`--i-have-a-real-key`,
+`--only ID`, `--diagnose`, `--delay`, `--stop-after-errors`), nunca lo ejecuta CI.
 
 ## Moderación de la salida (G06)
 

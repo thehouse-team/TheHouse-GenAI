@@ -7,10 +7,13 @@ opt-in, no test of the suite may import it, and it must never print the credenti
 from __future__ import annotations
 
 import ast
+import json
 import os
 import subprocess
 import sys
 from pathlib import Path
+
+from thehouse_genai.domain.text_guard import contains_injection_marker
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 TESTS_ROOT = REPO_ROOT / "tests"
@@ -159,6 +162,24 @@ mod._load_settings = lambda: Settings(
 """
 
 
+_INJECTION_SETUP = """
+from thehouse_genai.infrastructure.config import Settings
+from thehouse_genai.providers.base import GenerativeAiResponse, GenerativeAiUsage
+
+class _OkProvider:
+    async def generate(self, request):
+        return GenerativeAiResponse(
+            text='{"filters": {"university": "UTTT"}}',
+            usage=GenerativeAiUsage(input_tokens=1, output_tokens=1),
+        )
+
+mod.build_provider = lambda settings: _OkProvider()
+mod._load_settings = lambda: Settings(
+    _env_file=None, app_env="test", genai_provider="fake"
+)
+"""
+
+
 def _run_with_fake(
     setup: str, *args: str, ci: str = ""
 ) -> subprocess.CompletedProcess[str]:
@@ -279,6 +300,31 @@ def test_diagnose_reports_types_and_keys_for_invalid_json() -> None:
     assert "Resultado:" not in result.stdout
     assert '{"filters"' not in result.stdout
     assert "parse_search.fallback" not in result.stdout
+
+
+def test_injection_detection_line_is_silent_in_the_console() -> None:
+    result = _run_with_fake(
+        _INJECTION_SETUP,
+        "--i-have-a-real-key",
+        "--yes",
+        "--only",
+        "ps-27",
+        "--delay",
+        "0",
+    )
+
+    case = next(
+        item
+        for item in json.loads(
+            CORPUS_PATH.read_text(encoding="utf-8")
+        )["cases"]
+        if item["id"] == "ps-27"
+    )
+    assert contains_injection_marker(case["query"]) is True
+
+    assert result.returncode == 0, result.stderr
+    assert "ps-27:" in result.stdout
+    assert "parse_search.injection_detected" not in result.stdout
 
 
 def test_diagnose_is_silent_for_non_json_failures() -> None:

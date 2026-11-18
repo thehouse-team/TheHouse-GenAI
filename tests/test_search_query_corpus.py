@@ -15,7 +15,7 @@ from typing import Any
 import pytest
 
 from thehouse_genai.application.parse_search import PARSE_SEARCH_PROMPT_VERSION, ParseSearch
-from thehouse_genai.domain.search_filters import ParseSearchRequest
+from thehouse_genai.domain.search_filters import ParseSearchRequest, extract_services
 from thehouse_genai.providers.fake import FakeProvider
 
 _CORPUS_PATH = Path(__file__).parent / "fixtures" / "search_query_corpus.json"
@@ -64,6 +64,30 @@ def test_expected_filters_survive_the_guardrails(case: dict[str, Any]) -> None:
     assert body["confidence"] == case["expectedConfidence"], case["id"]
     assert body["generated"] is bool(case["expectedFilters"] != _empty_filters()), case["id"]
     assert body["promptVersion"] == PARSE_SEARCH_PROMPT_VERSION
+
+
+def test_ps_20_corpus_is_grounded_and_the_guardrail_does_not_invent_services() -> None:
+    """wifi is internet evidence and amueblado is in the query: the corpus is right.
+
+    The real run returned only [agua, internet]; the model omitted amueblado. Guardrails
+    may prune unsupported values but must never add one that was not proposed.
+    """
+
+    case = next(item for item in _corpus()["cases"] if item["id"] == "ps-20")
+    assert set(extract_services(case["query"])) == {"agua", "amueblado", "internet"}
+    assert case["expectedFilters"]["essentialServices"] == ["agua", "amueblado", "internet"]
+
+    filters = dict(case["expectedFilters"])
+    filters["essentialServices"] = ["agua", "internet"]
+    response = asyncio.run(
+        ParseSearch(FakeProvider(text=json.dumps({"filters": filters}))).execute(
+            ParseSearchRequest.model_validate({"query": case["query"]})
+        )
+    )
+    body = response.model_dump(mode="json", by_alias=True)
+
+    assert body["filters"]["essentialServices"] == ["agua", "internet"]
+    assert body["confidence"] == "high"
 
 
 def test_ps_03_misspelled_service_is_pruned_not_rejected() -> None:

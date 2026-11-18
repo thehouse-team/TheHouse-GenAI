@@ -15,7 +15,7 @@ Smart Match, no consulta propiedades y no contiene Mobile.
 | 001-foundation | IMPLEMENTED | Servicio mínimo, health, config, seguridad base, tests, CI |
 | 002-provider-abstraction | IMPLEMENTED | Puerto `GenerativeAiProvider`, DTOs, errores, fake y factory (offline) |
 | 003-smart-match-explanation | IMPLEMENTED | Explicación de match sin alterar hechos, con auth mínima de servicio |
-| 004-natural-language-search | ACTIVE | Parseo de búsqueda a filtros, nunca propiedades |
+| 004-natural-language-search | IMPLEMENTED | Parseo de búsqueda a filtros, nunca propiedades |
 | 005-security | IMPLEMENTED | Autenticación de servicio endurecida, PII, prompt injection |
 | 006-moderation | IMPLEMENTED | Política y moderación de la salida generativa (alcance A) |
 | 007-observability | IMPLEMENTED | Métricas en memoria, presupuesto diario, endpoints internos, SLOs y alertas documentadas |
@@ -35,7 +35,7 @@ Smart Match, no consulta propiedades y no contiene Mobile.
 | G05 | 005-security | Endurecimiento de seguridad, PII, prompt injection |
 | G06 | 006-moderation | Moderación de la salida generativa (IMPLEMENTED) |
 | G07 | 007-observability | Observabilidad, métricas y SLOs (IMPLEMENTED) |
-| G08 | 004-natural-language-search | Endpoint parse-search con auth endurecida |
+| G08 | 004-natural-language-search | Endpoint parse-search con auth endurecida (IMPLEMENTED) |
 | G09 | 010-integration-thehouse | Integración con Backend; cierra 008-testing |
 | G10 | 009-ci-cd | Pipeline completo y despliegue |
 
@@ -45,11 +45,17 @@ cobertura) se acumulan en cada fase y la spec se cierra en G09, junto con
 
 ## Spec activa
 
-`004-natural-language-search` (G08) está **ACTIVE** desde el 2026-11-18 sobre la rama
-`feature/natural-language-search`, con plan aprobado y las decisiones D1–D13 más los 4
-ajustes obligatorios registrados más abajo. Añade `POST /api/v1/generative/parse-search`
-con autenticación endurecida, reutilizando 003, 005, 006, 007 y 011 sin rehacerlos.
-Estado: B0 (documentación) completado; implementación en curso.
+`004-natural-language-search` (G08) se cerró como **IMPLEMENTED** el 2026-11-18 sobre la
+rama `feature/natural-language-search`, con plan aprobado y las decisiones D1–D13 más los
+4 ajustes obligatorios registrados más abajo aplicados. Añade
+`POST /api/v1/generative/parse-search` con autenticación endurecida, reutilizando 003,
+005, 006, 007 y 011 sin rehacerlos. Criterios verificados, gates en verde, 1021 tests sin
+red, 8 commits y evidencia en `specs/004-natural-language-search/evidence.md`. La prueba
+real con `gemini-3.5-flash-lite` cerró en 29/30 exactos tras reintentos; el diagnóstico de
+ps-03 reveló el bug del parser estricto, corregido sin relajar la validación. `maxBudget`
+y `maxDistanceKm` se serializan como números JSON porque el contrato con Backend manda.
+
+En este momento **ninguna spec está ACTIVE**.
 
 `007-observability` (G07) se cerró como **IMPLEMENTED** el 2026-11-18 sobre la
 rama `feature/observability` con las decisiones 1–9 aplicadas: métricas en memoria con
@@ -436,6 +442,20 @@ Ajustes obligatorios incorporados al diseño:
 - Rama `feature/smart-match-explanation`: 8 commits (B1–B7b más el cierre documental).
 - Evidencia completa en `specs/003-smart-match-explanation/evidence.md`.
 
+### 004-natural-language-search
+
+- `ruff check .`: sin hallazgos.
+- `mypy src`: sin errores (strict) en 36 archivos.
+- `mypy --strict scripts/smoke_parse_search.py`: sin errores.
+- `pytest`: 1021 tests aprobados, sin red (guard `block_network`), 1 warning heredado de
+  `TestClient` (deuda (d)/008).
+- Prueba real con `gemini-3.5-flash-lite` (delay 8 s): 27/30 en la corrida completa, 29/30
+  consolidados tras reintentar ps-10 y ps-29; latencia 826/1254/1824 ms (min/mediana/max).
+  El diagnóstico de ps-03 reveló el bug del parser estricto y se corrigió con un modelo de
+  completion crudo más poda en guardrails.
+- Rama `feature/natural-language-search`: 8 commits (B0–B7).
+- Evidencia completa en `specs/004-natural-language-search/evidence.md`.
+
 ### 005-security
 
 - `ruff check .`: sin hallazgos.
@@ -465,16 +485,16 @@ Ajustes obligatorios incorporados al diseño:
 - El logging estructurado de las llamadas al proveedor (modelo, duración, `error_code`)
   se inicia en 011 con la allowlist ampliada (D-4) y se completa en 007.
 - Usar contexto es-MX en los prompts reales de 004: moneda en MXN y formato de fecha y
-  hora UTTT. En 003 ya se aplica (MXN, UTTT, español de México). El smoke test de 011 no
-  fija esta convención porque su objetivo es medir latencia y calidad con datos
-  sintéticos.
+  hora UTTT. En 003 ya se aplica (MXN, UTTT, español de México) y el prompt de 004 fija
+  MXN y universidades mexicanas. El smoke test de 011 no fija esta convención porque su
+  objetivo es medir latencia y calidad con datos sintéticos.
 - La confirmación interactiva de `scripts/smoke_provider.py` acepta «si» en minúsculas
   porque normaliza a mayúsculas; no es un fallo, pero conviene decidir si se exige
   mayúscula estricta.
 - El precio por millón de tokens del modelo de desarrollo
   (`gemini-3.5-flash-lite`) queda por anotar desde la fuente de precios, y el modelo de
   producción se decide cuando se cree el proyecto de pago (G09).
-- Contratos y guardrails de parseo (004): en curso en G08 (spec ACTIVE). Los de explicación (003) están cerrados.
+- Contratos y guardrails de parseo (004): cerrados en G08 (spec IMPLEMENTED). Los de explicación (003) están cerrados.
 - `005-security` quedó `IMPLEMENTED` en G05; la auth mínima de 003 sigue vigente y mTLS
   queda para G09/G10 (D2).
 - Deuda (a): el rate limit es por proceso; revisar el límite efectivo con varias
@@ -526,16 +546,27 @@ Ajustes obligatorios incorporados al diseño:
 - Deuda 007-(d): los SLOs son valores iniciales; recalibrar con datos de staging en G10.
 - Deuda 007-(e): se mantiene el `StarletteDeprecationWarning` de `TestClient` con `httpx`;
   se revisa en 008. Es la misma deuda (e)/006-(d) ya registrada.
+- Deuda 004-(a): confirmar con Backend la semántica de `petsAllowed` en menciones negativas
+  ("sin mascotas" → `null`, nunca `false`) y sobre qué universidad se mide `maxDistanceKm`
+  cuando la query nombra más de una.
+- Deuda 004-(b): inestabilidad de la capa gratuita de Gemini (`PROVIDER_UNAVAILABLE` en
+  ps-10 y ps-29, picos de 8 a 13 s en pruebas anteriores): pasar a la capa de pago antes de
+  la demo con datos reales y recalibrar timeouts y SLOs.
+- Deuda 004-(c): ampliar la tabla de alias de universidades (hoy UTTT y su nombre completo,
+  más UNAM detectada por evidencia literal) con el uso real de los estudiantes.
+- Deuda 004-(d): se mantiene el `StarletteDeprecationWarning` de `TestClient` con `httpx`;
+  se revisa en 008. Es la misma deuda (e)/006-(d)/007-(e) ya registrada.
 
 ## Próximo paso
 
-G07 = `007-observability` quedó **IMPLEMENTED**: métricas en memoria, presupuesto diario,
-endpoints internos protegidos y SLOs documentados; la decisión de readiness del
-proveedor se resolvió con `/internal/health/detail` sin tocar los probes de G01, y se
-instrumentaron los motivos `MODERATION_*` y `PROVIDER_ERROR` (deuda 006-(c)).
+G07 = `007-observability` y G08 = `004-natural-language-search` quedaron **IMPLEMENTED**.
+G08 entregó `POST /api/v1/generative/parse-search` con autenticación y rate limit
+reutilizados, moderación y PII de punta a punta, ruta de métricas propia, corpus de 30
+casos y script manual opt-in; la evidencia está en
+`specs/004-natural-language-search/evidence.md`.
 
-G08 = `004-natural-language-search` está **en curso**: spec `ACTIVE`, B0 (documentación)
-completado sobre `feature/natural-language-search`; siguen los bloques B1–B7 hasta cerrar
-`parse-search`. G09/G10 aplicarán los timeouts de producción de D18, activarán el
-presupuesto (deuda 007-(b)) y decidirán el despliegue (mTLS, HSTS/CSP, cabecera `Server`,
+G09 = `010-integration-thehouse` es el próximo paso: contratos y operación con Backend,
+cerrando `008-testing` con contract tests y E2E en staging. G10 = `009-ci-cd` aplicará los
+timeouts de producción de D18, activará el presupuesto (deuda 007-(b)) y decidirá el
+despliegue (mTLS, HSTS/CSP, cabecera `Server`, capa de pago de Gemini —deuda 004-(b)—,
 rate limit global y agregación de métricas; deudas (a) y (b) de 005 y 007-(a)).

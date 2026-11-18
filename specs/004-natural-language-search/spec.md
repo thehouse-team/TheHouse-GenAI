@@ -1,6 +1,6 @@
 # 004-natural-language-search — Búsqueda en lenguaje natural
 
-- **Estado:** ACTIVE
+- **Estado:** IMPLEMENTED
 - **Depende de:** 001-foundation, 002-provider-abstraction, 003-smart-match-explanation,
   005-security, 006-moderation, 007-observability, 011-llm-provider
 - **Habilita:** 010-integration-thehouse

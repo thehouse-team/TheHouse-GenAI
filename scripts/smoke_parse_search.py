@@ -52,7 +52,10 @@ DEFAULT_STOP_AFTER_ERRORS: Final[int] = 3
 PROVIDER_LOGGER: Final[str] = "thehouse_genai.providers.gemini"
 FAILURE_EVENT: Final[str] = "provider.call.failed"
 FALLBACK_EVENT: Final[str] = "parse_search.fallback"
-HIDDEN_EVENTS: Final[frozenset[str]] = frozenset({FAILURE_EVENT, FALLBACK_EVENT})
+INJECTION_EVENT: Final[str] = "parse_search.injection_detected"
+HIDDEN_EVENTS: Final[frozenset[str]] = frozenset(
+    {FAILURE_EVENT, FALLBACK_EVENT, INJECTION_EVENT}
+)
 CODE_FENCE: Final[str] = "```"
 MAX_KEY_CHARS: Final[int] = 40
 PROVIDER_CODES: Final[frozenset[str]] = frozenset(item.value for item in ProviderErrorCode)

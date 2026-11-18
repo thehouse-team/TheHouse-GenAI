@@ -1,6 +1,6 @@
 # Tareas — 004-natural-language-search Búsqueda en lenguaje natural
 
-- **Estado:** ACTIVE
+- **Estado:** IMPLEMENTED
 
 ## B0 — Activación y contrato (docs)
 
@@ -23,32 +23,32 @@
 
 ## B2 — Guardrails
 
-- [ ] Validador anti-alucinación por evidencia (poda de filtros no respaldados).
-- [ ] Cálculo determinista de `confidence` con reglas de rango y otra moneda.
+- [x] Validador anti-alucinación por evidencia (poda de filtros no respaldados).
+- [x] Cálculo determinista de `confidence` con reglas de rango y otra moneda.
 
 ## B3 — Caso de uso
 
-- [ ] Prompt `parse_search_v1` con salida JSON de solo `filters`.
-- [ ] Proveedor, fallback 200, presupuesto y métricas reutilizados.
+- [x] Prompt `parse_search_v1` con salida JSON de solo `filters`.
+- [x] Proveedor, fallback 200, presupuesto y métricas reutilizados.
 
 ## B4 — Moderación y PII
 
-- [ ] Moderación de entrada fail-closed y de salida por el puerto de 006.
-- [ ] Redacción end-to-end antes del prompt.
+- [x] Moderación de entrada fail-closed y de salida por el puerto de 006.
+- [x] Redacción end-to-end antes del prompt.
 
 ## B5 — HTTP y observabilidad
 
-- [ ] Endpoint autenticado con rate limit y errores seguros.
-- [ ] Ruta cerrada `parse-search`, nuevos contadores/razones y correlación de logs.
+- [x] Endpoint autenticado con rate limit y errores seguros.
+- [x] Ruta cerrada `parse-search`, nuevos contadores/razones y correlación de logs.
 
 ## B6 — Corpus y script manual
 
-- [ ] Corpus versionado de 28 frases + 2 casos de contrato.
-- [ ] `scripts/smoke_parse_search.py` opt-in, nunca en CI.
+- [x] Corpus versionado de 28 frases + 2 casos de contrato.
+- [x] `scripts/smoke_parse_search.py` opt-in, nunca en CI.
 
 ## B7 — Cierre
 
-- [ ] Actualizar `checklist.md` y `evidence.md` con resultados reales.
-- [ ] Ejecutar `ruff check .`, `mypy src` y `pytest` sin red.
-- [ ] Revisar seguridad, secretos, PII y ausencia de caracteres CJK.
-- [ ] Cambiar el estado a `IMPLEMENTED` solo al cumplir todo.
+- [x] Actualizar `checklist.md` y `evidence.md` con resultados reales.
+- [x] Ejecutar `ruff check .`, `mypy src` y `pytest` sin red.
+- [x] Revisar seguridad, secretos, PII y ausencia de caracteres CJK.
+- [x] Cambiar el estado a `IMPLEMENTED` solo al cumplir todo.
