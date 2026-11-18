@@ -18,6 +18,15 @@ logger = logging.getLogger(__name__)
 # Only these headers are forwarded from an HTTPException to the client envelope.
 _ALLOWED_EXCEPTION_HEADERS: Final[frozenset[str]] = frozenset({"retry-after"})
 
+# Fixed security headers for every response. Defined here as well as used by the
+# middleware because an unhandled 500 is rendered outside the user middleware stack.
+SECURITY_RESPONSE_HEADERS: Final[dict[str, str]] = {
+    "Cache-Control": "no-store",
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "no-referrer",
+    "X-Frame-Options": "DENY",
+}
+
 _ERROR_CODES = {
     400: "BAD_REQUEST",
     401: "UNAUTHORIZED",
@@ -67,7 +76,11 @@ def error_response(
 ) -> JSONResponse:
     """Build the single error envelope used by every endpoint."""
 
-    response_headers = {"X-Request-ID": request_id, **_safe_headers(headers)}
+    response_headers = {
+        "X-Request-ID": request_id,
+        **SECURITY_RESPONSE_HEADERS,
+        **_safe_headers(headers),
+    }
     return JSONResponse(
         status_code=status_code,
         content={

@@ -11,7 +11,11 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from thehouse_genai import __version__
 from thehouse_genai.api.errors import install_exception_handlers
-from thehouse_genai.api.middleware import RequestContextMiddleware, RequestSizeLimitMiddleware
+from thehouse_genai.api.middleware import (
+    RequestContextMiddleware,
+    RequestSizeLimitMiddleware,
+    SecurityHeadersMiddleware,
+)
 from thehouse_genai.api.rate_limit import InMemoryRateLimiter
 from thehouse_genai.api.routes import generative, health
 from thehouse_genai.infrastructure.config import Settings, get_settings
@@ -71,6 +75,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             allow_methods=["GET", "POST", "OPTIONS"],
             allow_headers=["Authorization", "Content-Type", "X-Request-ID", "X-Service-Key"],
         )
+    # Added last so it wraps every other middleware, including the size limiter.
+    app.add_middleware(SecurityHeadersMiddleware)
 
     install_exception_handlers(app)
     app.include_router(health.router)

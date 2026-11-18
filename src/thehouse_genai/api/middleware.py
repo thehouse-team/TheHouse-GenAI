@@ -10,7 +10,7 @@ from uuid import uuid4
 from starlette.datastructures import Headers, MutableHeaders
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
-from thehouse_genai.api.errors import error_response
+from thehouse_genai.api.errors import SECURITY_RESPONSE_HEADERS, error_response
 from thehouse_genai.api.request_context import (
     get_request_id,
     request_id_ctx,
@@ -20,6 +20,31 @@ from thehouse_genai.api.request_context import (
 logger = logging.getLogger(__name__)
 
 _PATH_ID_PATTERN = re.compile(r"\b[0-9a-fA-F]{8,}\b")
+
+
+class SecurityHeadersMiddleware:
+    """Add fixed security headers to every response, including errors.
+
+    HSTS and CSP are deliberately absent: this is a service-to-service JSON API and
+    those headers belong to the deployment decision (spec 005, D9).
+    """
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        async def send_with_security_headers(message: Message) -> None:
+            if message["type"] == "http.response.start":
+                headers = MutableHeaders(scope=message)
+                for name, value in SECURITY_RESPONSE_HEADERS.items():
+                    headers[name] = value
+            await send(message)
+
+        await self.app(scope, receive, send_with_security_headers)
 
 
 class RequestContextMiddleware:
