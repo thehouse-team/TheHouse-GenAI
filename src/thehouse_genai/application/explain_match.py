@@ -33,7 +33,7 @@ from thehouse_genai.providers.base import (
 
 logger = logging.getLogger(__name__)
 
-EXPLAIN_MATCH_PROMPT_VERSION: Final[str] = "explain_match_v2"
+EXPLAIN_MATCH_PROMPT_VERSION: Final[str] = "explain_match_v3"
 
 SYSTEM_PROMPT: Final[str] = (
     "Reglas estrictas:\n"
@@ -49,7 +49,9 @@ SYSTEM_PROMPT: Final[str] = (
     "5. Deja un espacio entre cada palabra; no pegues preposiciones ni artículos a la "
     "palabra siguiente (nunca 'delpresupuesto' ni 'conuna').\n"
     "6. No uses frases como 'el resultado de coincidencia es' ni 'puntaje'.\n"
-    "7. Responde SOLO con JSON válido {\"explanation\": \"...\"}, sin markdown ni "
+    "7. No saludes ni uses exclamaciones; empieza directo con la propiedad.\n"
+    "8. Escribe el porcentaje con el símbolo % (no 'por ciento').\n"
+    "9. Responde SOLO con JSON válido {\"explanation\": \"...\"}, sin markdown ni "
     "texto adicional.\n"
 )
 
@@ -58,6 +60,10 @@ MAX_EXPLANATION_CHARS: Final[int] = 900
 TEMPERATURE: Final[float] = 0.2
 MAX_OUTPUT_TOKENS: Final[int] = 400
 
+_PUNCTUATION_SPACE_PATTERN: Final[re.Pattern[str]] = re.compile(r"([,;:!?])(?=[^\W\d_])")
+_SENTENCE_PERIOD_PATTERN: Final[re.Pattern[str]] = re.compile(r"(?<=[^\W\d_])\.(?=[^\W\d_])")
+_LETTER_CURRENCY_PATTERN: Final[re.Pattern[str]] = re.compile(r"(?<=[^\W\d_])\$")
+_WHITESPACE_PATTERN: Final[re.Pattern[str]] = re.compile(r"\s+")
 _PERCENT_PATTERN: Final[re.Pattern[str]] = re.compile(r"\d[\d,]*(?:\.\d+)?%")
 _CURRENCY_PATTERN: Final[re.Pattern[str]] = re.compile(r"\b[A-Z]{3}\b")
 _ACRONYM_PATTERN: Final[re.Pattern[str]] = re.compile(r"\b[A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑ0-9]{2,}\b")
@@ -117,6 +123,20 @@ def _build_prompt(request: ExplainMatchRequest) -> str:
         f"{request.to_context()}\n"
         "</untrusted_data>\n"
     )
+
+
+def _normalize_spaces(text: str) -> str:
+    """Fix typographic spacing without altering words, numbers or facts.
+
+    A missing space is inserted after punctuation and between a letter and '$',
+    then whitespace runs are collapsed. Decimal points and thousands separators stay
+    untouched because every rule requires an adjacent letter.
+    """
+
+    normalized = _PUNCTUATION_SPACE_PATTERN.sub(r"\1 ", text)
+    normalized = _SENTENCE_PERIOD_PATTERN.sub(". ", normalized)
+    normalized = _LETTER_CURRENCY_PATTERN.sub(" $", normalized)
+    return _WHITESPACE_PATTERN.sub(" ", normalized).strip()
 
 
 def _extract_percentages(text: str) -> frozenset[Decimal]:
@@ -259,8 +279,9 @@ class ExplainMatch:
         except ValidationError:
             return self._reject(request, "INVALID_JSON")
 
+        explanation = _normalize_spaces(payload.explanation)
         reason = _validate_explanation(
-            payload.explanation,
+            explanation,
             request,
             max_words=self._max_words,
         )
@@ -269,7 +290,7 @@ class ExplainMatch:
 
         self._log(generated=True, reason=None)
         return ExplainMatchResponse(
-            explanation=payload.explanation,
+            explanation=explanation,
             generated=True,
             promptVersion=self._prompt_version,
         )

@@ -11,8 +11,8 @@
 2. Construir un contexto serializado solo con campos allowlist, escapando delimitadores;
    los datos de entrada se tratan como no confiables.
 3. Solicitar `{"explanation": "..."}` con `response_format="json"` y prompt versionado
-   `explain_match_v2` (v1 histórica); validar la salida con Pydantic y guardrails
-   deterministas, incluido `MALFORMED_TEXT` para palabras pegadas (D14).
+   `explain_match_v3` (v1 y v2 históricas); normalizar espacios antes de validar (D17)
+   y aplicar guardrails deterministas, incluido `MALFORMED_TEXT` (D14).
 4. Extraer y normalizar a decimal todos los números de la salida y comprobar que
    pertenezcan al input; el porcentaje, si aparece, debe igualar `matchScore` (D3, D13).
 5. Usar `FakeProvider` para probar guardrails sin depender del modelo ni de la red.
@@ -61,7 +61,8 @@
 | B4 | Dependencia de autenticación `X-Service-Key`. | Completado |
 | B5 | Prompt `explain_match_v1`, caso de uso, validación y fallback. | Completado |
 | B6 | Factory en arranque, inyección por `app.state` y endpoint. | Completado |
-| B7 | Prompt v2, `MALFORMED_TEXT`, logger `httpx` y respuestas reales. | En curso |
+| B7 | Prompt v2, `MALFORMED_TEXT`, logger `httpx` y respuestas reales. | Completado |
+| B7b | Normalización de espacios, prompt v3 y respuestas reales v2. | En curso |
 | B8 | Cierre SDD, evidencia y PR. | Pendiente |
 
 Cada bloque deja `ruff check .`, `mypy src` y `pytest` en verde. B1 se commita; B2 no se
@@ -94,7 +95,7 @@ commitea y no se avanza a B3 sin revisión.
   estándar y sin filtrar detalles.
 - `provider_model` y la credencial no aparecen en la respuesta ni en logs.
 
-## Decisiones D1–D16 y ajustes
+## Decisiones D1–D17 y ajustes
 
 Ver la tabla completa en `spec.md`, sección «Decisiones aprobadas». Resumen: D1 camelCase
 con alias; D2 sin `facts_used`; D3 porcentaje validado; D4 200 + `generated=false` sin
@@ -105,7 +106,8 @@ normalización a decimal. Ajustes 1–5: redacción de la regla 4 del system pro
 `feature/smart-match-explanation`, plantilla de fallback neutra, `Decimal` para
 precios y validación laxa de servicios con delimitadores escapados. B7 añade D14
 (`MALFORMED_TEXT` acotado para palabras pegadas), D15 (prompt v2 con el feedback real de
-Gemini; v1 queda histórica) y D16 (logger `httpx` en WARNING).
+Gemini; v1 queda histórica), D16 (logger `httpx` en WARNING) y D17 (normalizar espacios
+en vez de rechazar, prompt v3 sin saludos y con `%`, sin «por ciento»).
 
 ## Riesgos y mitigaciones
 
@@ -116,6 +118,7 @@ Gemini; v1 queda histórica) y D16 (logger `httpx` en WARNING).
 | Prompt injection en descripciones | Delimitadores escapados, allowlist y validación de salida. |
 | Falsos rechazos por formato numérico | Normalización a decimal (D13); ante duda, fallback seguro. |
 | Palabras pegadas (`delpresupuesto`) | Detector acotado con allowlist (D14); fallback `MALFORMED_TEXT`. |
+| Espacios faltantes junto a puntuación | Normalización determinista previa (D17); nunca toca decimales ni miles. |
 | `GENAI_MAX_INPUT_CHARS` insuficiente | Medir system prompt + contexto en B5 (D10). |
 | Exposición de PII | Contrato mínimo y filtro previo a GenAI. |
 

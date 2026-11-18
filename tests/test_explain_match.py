@@ -108,7 +108,7 @@ def test_valid_completion_returns_generated_explanation() -> None:
     assert response.generated is True
     assert response.explanation == explanation
     assert response.prompt_version == EXPLAIN_MATCH_PROMPT_VERSION
-    assert EXPLAIN_MATCH_PROMPT_VERSION == "explain_match_v2"
+    assert EXPLAIN_MATCH_PROMPT_VERSION == "explain_match_v3"
 
 
 def test_port_request_carries_the_generation_settings() -> None:
@@ -326,8 +326,11 @@ def _real_payload() -> ExplainMatchRequest:
     return ExplainMatchRequest.model_validate(payload)
 
 
-def test_prompt_v2_rules_are_present() -> None:
-    assert EXPLAIN_MATCH_PROMPT_VERSION == "explain_match_v2"
+def test_prompt_v3_rules_are_present() -> None:
+    assert EXPLAIN_MATCH_PROMPT_VERSION == "explain_match_v3"
+    assert "No saludes ni uses exclamaciones" in SYSTEM_PROMPT
+    assert "empieza directo con la propiedad" in SYSTEM_PROMPT
+    assert "no 'por ciento'" in SYSTEM_PROMPT
     assert "segunda persona" in SYSTEM_PROMPT
     assert "'tú'" in SYSTEM_PROMPT
     assert "2 o 3 oraciones" in SYSTEM_PROMPT
@@ -414,3 +417,53 @@ def test_httpx_logger_is_muted() -> None:
     )
 
     assert 'logging.getLogger("httpx").setLevel(logging.WARNING)' in source
+
+
+REAL_V2_NORMAL = (
+    "¡Hola! Esta habitación cerca de UTTT coincide con un 91% porque cuesta$2,800 MXN, "
+    "respetando tu presupuesto máximo de $3,000 MXN. Además, se ubica a 1.3 km,estando "
+    "dentro de tu distancia límite de 3.0 km, y cuenta con internet."
+)
+REAL_V2_INJECTION = (
+    "Esta opción tiene un grado de coincidencia del 91 por ciento con lo que buscas. "
+    "Se ubica a 1.3 kilómetros de la UTTT e incluye internet entre sus servicios. "
+    "Además, su precio es de $2,800 MXN, lo que se ajusta perfectamente a tu presupuesto "
+    "máximo de $3,000 MXN."
+)
+
+
+def test_real_v2_normal_response_is_normalized_and_accepted() -> None:
+    provider = FakeProvider(text=_completion(REAL_V2_NORMAL))
+
+    response = asyncio.run(ExplainMatch(provider).execute(_real_payload()))
+
+    assert response.generated is True
+    assert "cuesta $2,800 MXN" in response.explanation
+    assert "1.3 km, estando" in response.explanation
+    assert "1.3" in response.explanation
+    assert "2,800" in response.explanation
+    assert "91%" in response.explanation
+    assert "$3,000 MXN" in response.explanation
+    assert len(response.explanation.split()) <= 60
+
+
+def test_real_v2_injection_response_is_accepted() -> None:
+    provider = FakeProvider(text=_completion(REAL_V2_INJECTION))
+
+    response = asyncio.run(ExplainMatch(provider).execute(_real_payload()))
+
+    assert response.generated is True
+    assert "91 por ciento" in response.explanation
+
+
+def test_space_normalization_leaves_numbers_and_currency_untouched() -> None:
+    from thehouse_genai.application.explain_match import _normalize_spaces
+
+    result = _normalize_spaces("cuesta$2,800 MXN,estando a 1.3 km;total 91%,y $3,000 MXN")
+
+    assert result == "cuesta $2,800 MXN, estando a 1.3 km; total 91%, y $3,000 MXN"
+    assert "1.3" in result
+    assert "2,800" in result
+    assert "91%" in result
+    assert "$3,000 MXN" in result
+    assert _normalize_spaces("a 1.3 km.El total es 2,800.") == "a 1.3 km. El total es 2,800."

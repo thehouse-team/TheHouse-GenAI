@@ -24,9 +24,12 @@ Smart Match es una función ML del Backend. GenAI no lo calcula. El endpoint rec
   `locale` (solo `es-MX`) y coherencia de monedas.
 - Precios y presupuesto como `Decimal` (ge 0, máximo 2 decimales); formato es-MX en la
   explicación sin inventar conversión de moneda.
-- Prompt versionado `explain_match_v2` (v1 queda como histórica), con datos no
+- Prompt versionado `explain_match_v3` (v1 y v2 quedan como históricas), con datos no
   confiables delimitados y escapados; segunda persona, tono cálido, 2–3 oraciones,
-  máximo 60 palabras, porcentaje con `%` y precios `$2,800 MXN`.
+  máximo 60 palabras, porcentaje con `%`, precios `$2,800 MXN`, sin saludos ni
+  exclamaciones y sin la expresión «por ciento».
+- Normalización determinista de espacios antes de validar (corrección tipográfica que
+  no altera hechos).
 - Validación de salida: longitud máxima 60 palabras, sin números ausentes del input,
   porcentaje igual a `matchScore`, servicios del vocabulario permitido, sin datos
   inventados y sin palabras pegadas (`MALFORMED_TEXT`).
@@ -55,8 +58,8 @@ Smart Match es una función ML del Backend. GenAI no lo calcula. El endpoint rec
 - **RF-03:** no se inventan precios, distancias, servicios, universidad ni disponibilidad.
 - **RF-04:** la salida no incluye un score propio ni modificado. El modelo puede
   mencionar el porcentaje recibido solo si es idéntico a `matchScore` (D3).
-- **RF-05:** la explicación tiene un máximo de 60 palabras en `explain_match_v2`
-  (120 en la versión histórica `explain_match_v1`).
+- **RF-05:** la explicación tiene un máximo de 60 palabras en `explain_match_v3`
+  (120 en `explain_match_v1`, 60 en `explain_match_v2`, ambas históricas).
 - **RF-06:** entradas inconsistentes o incompletas se rechazan con 422. En particular,
   `property.currency != preferences.currency` es 422 (D9).
 - **RF-07:** texto libre de propiedad se trata como dato, no como instrucción.
@@ -72,7 +75,7 @@ Smart Match es una función ML del Backend. GenAI no lo calcula. El endpoint rec
   rechaza con 422 (D6).
 - **RF-13:** `university` es `str` (D7). `price` y `budgetMax` son `Decimal` con ge 0 y
   máximo 2 decimales (ajuste 4).
-- **RF-14:** `promptVersion` es una constante propia (`explain_match_v2`); nunca se
+- **RF-14:** `promptVersion` es una constante propia (`explain_match_v3`); nunca se
   deriva de `provider_model` ni de otro detalle del proveedor.
 - **RF-15:** ante fallo del proveedor, timeout o rechazo de la validación, se responde
   **200** con `generated=false` y la plantilla de fallback; no se devuelve 502 (D4).
@@ -85,15 +88,20 @@ Smart Match es una función ML del Backend. GenAI no lo calcula. El endpoint rec
 - **RF-18:** los servicios solo se validan contra caracteres de control y longitud
   máxima de 40; no se aplica regex restrictiva y los delimitadores se escapan en
   `to_context()` (ajuste 5).
-- **RF-19:** `explain_match_v2` habla en segunda persona con tono cálido, usa 2–3
-  oraciones y máximo 60 palabras, escribe el porcentaje con `%` y los precios como
-  `$2,800 MXN` con la moneda del input, y evita «el resultado de coincidencia es» y
-  «puntaje» (D15).
+- **RF-19:** `explain_match_v3` habla en segunda persona con tono cálido, usa 2–3
+  oraciones y máximo 60 palabras, escribe el porcentaje con el símbolo `%` (no «por
+  ciento») y los precios como `$2,800 MXN` con la moneda del input, evita «el resultado
+  de coincidencia es» y «puntaje», no saluda ni usa exclamaciones y empieza directo con
+  la propiedad (D15, D17).
 - **RF-20:** palabras pegadas como `delpresupuesto` o `conuna` se rechazan con
   `MALFORMED_TEXT` y degradan a fallback; el detector es acotado y evita falsos
   positivos con palabras válidas (D14).
 - **RF-21:** el logger `httpx` se configura en WARNING para conservar solo los logs
   estructurados propios (D16).
+- **RF-22:** antes de validar se normalizan solo espacios: después de `, ; : ! ?` y de
+  un punto que cierra oración seguido de letra (sin tocar `1.3` ni `2,800`), entre letra
+  y `$`, se colapsan espacios múltiples y se aplica `strip`. No se cambia ninguna palabra
+  ni número; es una corrección tipográfica, no una alteración de hechos (D17).
 
 ## Criterios de aceptación
 
@@ -106,7 +114,10 @@ Smart Match es una función ML del Backend. GenAI no lo calcula. El endpoint rec
 - [ ] Las respuestas reales de Gemini se usan como fixtures: la normal se acepta y la
       de `delpresupuesto` degrada a fallback.
 - [ ] `91%`, `$2,800 MXN` y `$3,000 MXN` pasan la validación de números (D13).
-- [ ] `promptVersion` es `explain_match_v2` y el prompt incluye sus nuevas reglas.
+- [ ] `promptVersion` es `explain_match_v3` y el prompt incluye sus nuevas reglas.
+- [ ] La normalización corrige `cuesta$2,800` y `1.3 km,estando` sin alterar `1.3`,
+      `2,800`, `$3,000 MXN` ni `91%`; «91 por ciento» se acepta.
+- [ ] `delpresupuesto` sigue degradando a `MALFORMED_TEXT`.
 - [ ] El logger `httpx` queda en WARNING.
 - [ ] Prompt injection en título, universidad y servicios (incluido `</untrusted_data>`)
       no cambia reglas ni hechos.
@@ -181,12 +192,12 @@ Salida (exactamente tres campos):
 {
   "explanation": "Esta propiedad tiene una coincidencia del 87% con tus preferencias. Cuarto cerca de UTTT cuesta $2,800 MXN, está a 1.2 km de la UTTT y cuenta con internet, agua. Tu presupuesto es de $3,000 MXN.",
   "generated": true,
-  "promptVersion": "explain_match_v2"
+  "promptVersion": "explain_match_v3"
 }
 ```
 
 - `generated=true`: salida del modelo validada. `generated=false`: plantilla de fallback.
-- `promptVersion` es constante del servicio (`explain_match_v2`); nunca se toma de
+- `promptVersion` es constante del servicio (`explain_match_v3`); nunca se toma de
   `provider_model` ni de otro dato del proveedor.
 - El score no se devuelve como campo; solo puede aparecer dentro de `explanation`
   como porcentaje idéntico a `matchScore` (D3).
@@ -222,8 +233,9 @@ No se usa la frase «No se pudo generar…». El fallback no es un error para Ba
 | D12 | Vocabulario inicial de servicios en `domain`: `internet`, `agua`, `luz`, `gas`, `estacionamiento`, `lavadora`, `amueblado`, `baño privado`, `mascotas`. |
 | D13 | Normalizar todos los números a decimal antes de compararlos con los del input. |
 | D14 | `MALFORMED_TEXT` detecta palabras pegadas con prefijo funcional + sufijo del dominio, coincidencia exacta, sin acentos y allowlist de palabras válidas (`porque`, `conque`, `delimite`). Un regex amplio daría falsos positivos con `conde`, `conforme`, `delante` o `debajo`. |
-| D15 | Prompt `explain_match_v2` según las respuestas reales de Gemini: segunda persona, tono cálido, 2–3 oraciones, máximo 60 palabras, porcentaje con `%`, precios `$2,800 MXN`, sin «el resultado de coincidencia es» ni «puntaje», con espacio entre palabras. `explain_match_v1` queda documentada como histórica. |
+| D15 | Prompt `explain_match_v2` según las respuestas reales de Gemini: segunda persona, tono cálido, 2–3 oraciones, máximo 60 palabras, porcentaje con `%`, precios `$2,800 MXN`, sin «el resultado de coincidencia es» ni «puntaje», con espacio entre palabras. Queda histórica. |
 | D16 | El logger `httpx` se fija en WARNING para conservar solo los logs estructurados propios. |
+| D17 | Ante errores de espacio junto a puntuación (`cuesta$2,800`, `1.3 km,estando`) se normaliza en lugar de rechazar: es una corrección tipográfica que no altera hechos. Las reglas exigen letra adyacente, por lo que decimales (`1.3`) y miles (`2,800`) no se tocan. Las palabras pegadas siguen siendo `MALFORMED_TEXT` (D14). Prompt `explain_match_v3`: sin saludos ni exclamaciones, empieza con la propiedad y usa el símbolo `%` en vez de «por ciento». |
 
 ### Ajustes obligatorios incorporados
 
