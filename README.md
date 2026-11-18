@@ -10,7 +10,10 @@ G01 Foundation, G02 (`002-provider-abstraction`), G03 (`011-llm-provider`), G04
 (`003-smart-match-explanation`) y G05 (`005-security`) implementados. G05 endurece la
 autenticación de servicio de 003 con rotación de clave, rate limiting, allowlist de PII,
 corpus de inyección, headers de seguridad y logging, sin cambiar el contrato de
-`explain-match`.
+`explain-match`. G06 (`006-moderation`) está **ACTIVA** con alcance A: política local
+`moderation_v1`, puerto de moderación con fake y moderador determinista para la salida,
+y `safetySettings` en Gemini. Sin endpoint de contenido de usuarios y sin llamadas
+extra al proveedor.
 
 G02 define el puerto `GenerativeAiProvider`, sus DTOs inmutables, la taxonomía de
 errores, el guard central de timeout y límite de entrada, un `FakeProvider`
@@ -73,10 +76,24 @@ Response:
 }
 ```
 
-`generated=false` indica una explicación de plantilla construida solo con datos del
-input (fallo del proveedor o salida rechazada); en ese caso el código HTTP sigue siendo
-`200`. GenAI no calcula ni modifica `matchScore` y nunca devuelve detalles del proveedor.
-Ver `specs/003-smart-match-explanation/evidence.md` para las pruebas reales.
+`generated=false` indica una explicación de plantilla construida solo con datos
+estructurados del input (fallo del proveedor, salida rechazada o moderación de G06); en
+ese caso el código HTTP sigue siendo `200`. La plantilla no incluye el título de la
+propiedad, porque ese texto lo escribe el arrendador y puede traer PII, ofensas o
+inyección. GenAI no calcula ni modifica `matchScore` y nunca devuelve detalles del
+proveedor. Ver `specs/003-smart-match-explanation/evidence.md` para las pruebas reales.
+
+## Moderación de la salida (G06)
+
+La explicación generada pasa por un puerto `ModerationProvider` con un moderador local
+determinista: detecta correos, teléfonos, URLs y lenguaje ofensivo es-MX con reglas y
+léxico versionados, sin red y sin consumir cuota de Gemini. Si la salida se bloquea o el
+moderador falla, se responde `200` con `generated=false` y la plantilla de fallback: no
+hay nuevo campo ni código de error. Como refuerzo del proveedor, `generateContent` envía
+`safetySettings` con umbral `BLOCK_MEDIUM_AND_ABOVE` en la misma petición. Los logs solo
+registran decisión, categoría y versión de política, nunca el texto moderado. El contrato
+`{explanation, generated, promptVersion}` no cambia.
+
 
 ## Ejecución local
 

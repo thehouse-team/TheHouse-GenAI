@@ -1,6 +1,6 @@
 # Memoria del proyecto — TheHouse GenAI
 
-Última actualización: 2026-11-17
+Última actualización: 2026-11-18
 
 ## Identidad
 
@@ -17,7 +17,7 @@ Smart Match, no consulta propiedades y no contiene Mobile.
 | 003-smart-match-explanation | IMPLEMENTED | Explicación de match sin alterar hechos, con auth mínima de servicio |
 | 004-natural-language-search | PLANNED | Parseo de búsqueda a filtros, nunca propiedades |
 | 005-security | IMPLEMENTED | Autenticación de servicio endurecida, PII, prompt injection |
-| 006-moderation | PLANNED | Política y moderación de contenido |
+| 006-moderation | ACTIVE | Política y moderación de la salida generativa (alcance A) |
 | 007-observability | PLANNED | Métricas, trazas, SLOs y alertas |
 | 008-testing | PLANNED | Estrategia completa y contract tests (transversal, cierra en G09) |
 | 009-ci-cd | PLANNED | Pipeline completo y despliegue futuro |
@@ -45,7 +45,15 @@ cobertura) se acumulan en cada fase y la spec se cierra en G09, junto con
 
 ## Spec activa
 
-Ninguna. `005-security` (G05) se cerró como `IMPLEMENTED` el 2026-11-17 sobre la rama
+`006-moderation` (G06) está `ACTIVE` desde el 2026-11-18 sobre la rama `feature/moderation`,
+con el plan aprobado para el **alcance A**: política versionada `moderation_v1`, puerto de
+moderación con fake y moderador local determinista, moderación de la **salida** de
+`explain-match` y `safetySettings` en Gemini. Sin endpoint de contenido de usuarios, sin
+LLM de moderación y sin dependencias nuevas. La spec se activó con los bloques B1–B6 del
+plan; B1 (documentación) y B2 (política y detectores) quedan registrados en
+`specs/006-moderation/evidence.md`.
+
+`005-security` (G05) se cerró como `IMPLEMENTED` el 2026-11-17 sobre la rama
 `feature/security-hardening` con criterios verificados, gates en verde y 536 tests sin
 red. Endureció la autenticación de servicio de 003 sin rehacerla: rotación de clave,
 rate limiting en memoria, minimización de PII, corpus de prompt injection, headers de
@@ -57,8 +65,8 @@ criterios verificados, gates en verde, 409 tests sin red y evidencia registrada 
 sus criterios verificados, los gates en verde y la evidencia registrada en
 `specs/011-llm-provider/evidence.md`, incluido el smoke test manual ejecutado con una
 credencial real el 2026-11-16. `001-foundation`, `002-provider-abstraction`, 003 y 005
-permanecen `IMPLEMENTED` y el resto de specs, `PLANNED`. Solo una spec puede estar
-`ACTIVE` a la vez.
+permanecen `IMPLEMENTED`; `006-moderation` es la única `ACTIVE` y el resto de specs,
+`PLANNED`. Solo una spec puede estar `ACTIVE` a la vez.
 
 ## Enmiendas de la constitución
 
@@ -284,6 +292,24 @@ Plan aprobado el 2026-11-17. Decisiones D1–D12 registradas al activar la spec:
 Las doce decisiones se aplicaron íntegramente; el detalle está en
 `specs/005-security/spec.md` y los resultados en `specs/005-security/evidence.md`.
 
+## Decisiones tomadas en 006
+
+Plan aprobado el 2026-11-18 para el alcance A. Quedan fuera de G06 el endpoint de
+moderación de contenido de usuarios y el uso del LLM como moderador.
+
+| # | Decisión |
+| --- | --- |
+| A1 | Alcance A únicamente: reglas deterministas locales sobre la salida de `explain-match` más `safetySettings` en `generateContent`. Sin endpoint de contenido de usuarios. |
+| A2 | Fail-closed en salida: ante decisión adversa o error del moderador se responde 200 con `generated=false` y la plantilla de fallback; nunca 500 ni un campo nuevo en la respuesta. |
+| A3 | `safetySettings`: cuatro categorías centrales de Gemini con umbral `BLOCK_MEDIUM_AND_ABOVE`, como constante en `providers/gemini.py` y sin variable de entorno nueva. Es refuerzo del proveedor, no el mecanismo de moderación. |
+| A4 | Cero llamadas extra a Gemini: las reglas locales no consumen cuota y los `safetySettings` viajan en la misma petición. Sin modo híbrido en G06. |
+| A5 | RF-02 se reformula: «toda salida generativa pasa por el puerto de moderación; la entrada de `explain-match` sigue cubierta por 003/005 (escape y registro, sin rechazo, D5 de 005)». |
+| A6 | La plantilla de fallback de `explain-match` **no incluye el título de la propiedad**: ese texto lo escribe el arrendador y puede traer PII, ofensas o inyección (observado en G04). La plantilla usa solo datos estructurados: score, precio con moneda, distancia, universidad y servicios. Sin cambiar el contrato `{explanation, generated, promptVersion}`. |
+| A7 | Para la opción B, cuando se active: fail-closed = `review` (Backend no publica hasta revisión humana) y LLM solo con flag opt-in. Queda documentado como decisión anticipada, sin implementar en G06. |
+
+La decisión A6 se aplica a la documentación en B1; su implementación en el código (y la
+actualización de los tests afectados) corresponde al bloque B4.
+
 El único cliente es Backend, así que el rate limit por cliente es efectivamente global
 para el tráfico legítimo. Gemini en capa gratuita limita ~15 RPM y el exceso termina en
 fallback 200 con `generated=false`; el rate limit de GenAI protege contra abuso si la
@@ -387,13 +413,21 @@ explicaciones en Backend y manejo del 429 como «sin explicación».
   Backend; es detector de alucinaciones, no una restricción de entrada.
 - Deuda (e): `StarletteDeprecationWarning` de `TestClient` con `httpx`: se mantiene y se
   revisa en 008.
-- Moderación, observabilidad avanzada, contract tests e integración (006–010).
+- Deuda (f): la opción B de `006-moderation` (moderación de contenido de usuarios:
+  títulos y descripciones de propiedades, reseñas y reportes) quedó fuera del alcance A
+  aprobado. Si el requisito académico la exige, se abre como **spec nueva** dependiente
+  de 006, con el contrato propuesto en el plan y la decisión A7 (fail-closed `review`,
+  LLM solo con flag opt-in). No se implementa en G06.
+- Moderación de la salida (006, en curso), observabilidad avanzada, contract tests e
+  integración (007–010).
 - No hay despliegue. Hay una credencial de desarrollo en el entorno local, fuera del
   repositorio: la capa gratuita de Gemini se usa solo con prompts sintéticos.
 
 ## Próximo paso
 
-G06 = `006-moderation`: política y moderación de contenido. Les siguen G07
+G06 = `006-moderation` (alcance A), ACTIVA: B1 (documentación) y B2 (política y
+detectores) completados; continúan B3 (puerto, guard y fake), B4 (integración en la salida
+y plantilla sin título), B5 (`safetySettings`) y B6 (cierre y evidencia). Les siguen G07
 (`007-observability`, donde se decide el readiness del proveedor), G08
 (`004-natural-language-search`) y G09/G10, donde se aplican los timeouts de producción
 de D18 y se decide el despliegue (incluidos mTLS, HSTS/CSP, la cabecera `Server` y el

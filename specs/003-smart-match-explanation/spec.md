@@ -36,7 +36,8 @@ Smart Match es una función ML del Backend. GenAI no lo calcula. El endpoint rec
 - Respuesta `{explanation, generated, promptVersion}`; el score no se devuelve ni se
   modifica y nunca se exponen `provider_model` ni detalles del proveedor.
 - Fallback seguro: `generated=false` con plantilla neutra y factual construida solo
-  con datos del input; el fallback no es un error para el Backend.
+  con datos estructurados del input, sin el título libre de la propiedad (D19); el
+  fallback no es un error para el Backend.
 - Autenticación mínima servicio-a-servicio: header `X-Service-Key`, credencial en
   `Settings` como `SecretStr` (env `GENAI_SERVICE_KEY`), comparación en tiempo constante
   y `401` con el sobre de error estándar.
@@ -204,16 +205,22 @@ Salida (exactamente tres campos):
 
 ## Fallback
 
-Si el proveedor falla, agota el timeout o la validación rechaza la salida, se responde
-**200** con `generated=false` y esta plantilla neutra y factual, construida solo con
-datos del input (ajuste 3):
+Si el proveedor falla, agota el timeout, la validación rechaza la salida o la
+moderación de 006 bloquea el texto generado, se responde **200** con `generated=false` y
+esta plantilla neutra y factual, construida solo con datos estructurados del input
+(ajuste 3, D19):
 
 > Esta propiedad tiene una coincidencia del {matchScore}% con tus preferencias.
-> {title} cuesta ${price} {currency}, está a {distanceKm} km de la {university} y cuenta
-> con {servicios}. Tu presupuesto es de ${budgetMax} {currency}.
+> Cuesta {priceMXN}, está a {distanceKm} km de la {university} y cuenta con {servicios}.
 
-La coincidencia se atribuye a las preferencias del estudiante, **no** a la universidad.
-No se usa la frase «No se pudo generar…». El fallback no es un error para Backend.
+`{priceMXN}` es el precio formateado en estilo es-MX con la moneda del input (por
+ejemplo `$2,800 MXN`). La cláusula de servicios se omite si la lista está vacía. La
+plantilla **no incluye `{title}`**: ese texto lo escribe el arrendador y puede traer
+PII, ofensas o inyección (observado en G04); por eso la plantilla solo contiene datos
+estructurados y la excepción de «la plantilla no se modera» queda justificada en 006
+(decisión A6). La coincidencia se atribuye a las preferencias del estudiante, **no** a
+la universidad. No se usa la frase «No se pudo generar…». El fallback no es un error
+para Backend y el contrato `{explanation, generated, promptVersion}` no cambia.
 
 ## Decisiones aprobadas
 
@@ -237,13 +244,15 @@ No se usa la frase «No se pudo generar…». El fallback no es un error para Ba
 | D16 | El logger `httpx` se fija en WARNING para conservar solo los logs estructurados propios. |
 | D17 | Ante errores de espacio junto a puntuación (`cuesta$2,800`, `1.3 km,estando`) se normaliza en lugar de rechazar: es una corrección tipográfica que no altera hechos. Las reglas exigen letra adyacente, por lo que decimales (`1.3`) y miles (`2,800`) no se tocan. Las palabras pegadas siguen siendo `MALFORMED_TEXT` (D14). Prompt `explain_match_v3`: sin saludos ni exclamaciones, empieza con la propiedad y usa el símbolo `%` en vez de «por ciento». |
 | D18 | GenAI debe cortar antes que el Backend. Recomendación de producción: `GENAI_TIMEOUT_SECONDS=6` en GenAI y timeout de 8 s en el cliente del Backend, por el pico real de 9639 ms en la capa gratuita. El default de `Settings` sigue en 15 s; se aplica en G09/G10. |
+| D19 | La plantilla de fallback no incluye el título de la propiedad ni el presupuesto: usa solo score, precio con moneda, distancia, universidad y servicios, todos estructurados y validados por Backend. Lo pide 006 (A6) porque el título libre puede traer PII, ofensas o inyección. El contrato de la respuesta no cambia; la implementación del código y de los tests se hace en el bloque B4 de 006. |
 
 ### Ajustes obligatorios incorporados
 
 1. Regla 4 del system prompt: «no lo completes ni lo deduzcas» (sin caracteres CJK).
 2. Rama de trabajo: `feature/smart-match-explanation` (la actual).
-3. Plantilla de fallback neutra y factual, sin «No se pudo generar»; coincidencia con
-   las preferencias del estudiante, no con la universidad.
+3. Plantilla de fallback neutra y factual, sin «No se pudo generar» ni el título libre
+   de la propiedad (D19); coincidencia con las preferencias del estudiante, no con la
+   universidad.
 4. `price` y `budgetMax` como `Decimal` (ge 0, máximo 2 decimales), no `int`.
 5. Servicios: rechazar solo caracteres de control y longitud > 40; sin regex
    restrictiva; delimitadores escapados en `to_context()`.
