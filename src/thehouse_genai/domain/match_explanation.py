@@ -40,6 +40,26 @@ KNOWN_SERVICES: Final[frozenset[str]] = frozenset(
     }
 )
 
+# Fields that may reach the LLM prompt (spec 005, RF-03). Any new request field must be
+# added here explicitly: tests pin this list to the model schema and to the keys emitted
+# by `to_context()`, so the two cannot drift apart unnoticed.
+PROMPT_FIELD_ALLOWLIST: Final[frozenset[str]] = frozenset(
+    {
+        "matchScore",
+        "locale",
+        "university",
+        "property.title",
+        "property.price",
+        "property.currency",
+        "property.distanceKm",
+        "property.services",
+        "preferences.budgetMax",
+        "preferences.currency",
+        "preferences.maxDistanceKm",
+        "preferences.essentialServices",
+    }
+)
+
 _NUMBER_PATTERN: Final[re.Pattern[str]] = re.compile(r"\d[\d,]*(?:\.\d+)?%?")
 _MODEL_CONFIG: Final[ConfigDict] = ConfigDict(
     extra="forbid",
