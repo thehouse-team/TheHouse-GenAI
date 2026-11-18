@@ -387,3 +387,37 @@ def test_importing_the_port_does_not_load_httpx() -> None:
     )
 
     assert result.stdout.strip() == "False"
+
+
+def _modules_imported_by(path: Path) -> list[str]:
+    """Return every absolute module path imported by one source file."""
+
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    return [module for module, _alias in _iter_imports(tree, _package_of(path))]
+
+
+def test_application_never_imports_infrastructure() -> None:
+    forbidden = f"{PROJECT_PACKAGE}.infrastructure"
+    offenders: list[str] = []
+    for path in sorted((SOURCE_ROOT / "application").glob("*.py")):
+        for module in _modules_imported_by(path):
+            if module == forbidden or module.startswith(f"{forbidden}."):
+                offenders.append(f"{path.name} imports {module}")
+
+    assert not offenders, "\n".join(offenders)
+
+
+def test_domain_never_imports_providers_api_or_infrastructure() -> None:
+    forbidden_roots = (
+        f"{PROJECT_PACKAGE}.providers",
+        f"{PROJECT_PACKAGE}.api",
+        f"{PROJECT_PACKAGE}.infrastructure",
+    )
+    offenders: list[str] = []
+    for path in sorted((SOURCE_ROOT / "domain").glob("*.py")):
+        for module in _modules_imported_by(path):
+            if any(module == root or module.startswith(f"{root}.") for root in forbidden_roots):
+                offenders.append(f"{path.name} imports {module}")
+
+    assert not offenders, "\n".join(offenders)
+
