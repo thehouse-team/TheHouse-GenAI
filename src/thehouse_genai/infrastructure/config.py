@@ -114,6 +114,13 @@ class Settings(BaseSettings):
         validation_alias="GENAI_SERVICE_KEY_PREVIOUS",
     )
 
+    # Separate credential for internal diagnostic endpoints (spec 007, decision 2).
+    # Only the GENAI_ prefixed variable is read; never log or serialize it.
+    metrics_key: SecretStr | None = Field(
+        default=None,
+        validation_alias="GENAI_METRICS_KEY",
+    )
+
     # Provider configuration (spec 002, extended by spec 011). "gemini" is accepted
     # by the configuration and requires a credential and a model id; the factory
     # still builds only "fake" until its own block closes.
@@ -184,6 +191,7 @@ class Settings(BaseSettings):
         aliases: dict[str, str] = {
             "service_key": "GENAI_SERVICE_KEY",
             "service_key_previous": "GENAI_SERVICE_KEY_PREVIOUS",
+            "metrics_key": "GENAI_METRICS_KEY",
         }
         for field_name in (
             "rate_limit_enabled",
@@ -203,7 +211,7 @@ class Settings(BaseSettings):
                 mapped[env_name] = mapped[field_name]
         return mapped
 
-    @field_validator("service_key", "service_key_previous", mode="before")
+    @field_validator("service_key", "service_key_previous", "metrics_key", mode="before")
     @classmethod
     def _normalize_service_keys(cls, value: Any) -> Any:
         """Treat a blank service key as unset instead of an empty secret."""

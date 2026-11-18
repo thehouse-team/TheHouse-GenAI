@@ -18,6 +18,7 @@ from hmac import compare_digest
 from typing import Final, NoReturn
 
 from fastapi import HTTPException, Request
+from pydantic import SecretStr
 
 from thehouse_genai.api.request_context import get_request_id
 from thehouse_genai.application.metrics_port import (
@@ -30,21 +31,20 @@ from thehouse_genai.infrastructure.config import Settings
 logger = logging.getLogger(__name__)
 
 _SERVICE_KEY_HEADER: Final = "x-service-key"
+_METRICS_KEY_HEADER: Final = "x-metrics-key"
 _REASON_MISSING_KEY: Final = "missing_key"
 _REASON_INVALID_KEY: Final = "invalid_key"
 _REASON_NOT_CONFIGURED: Final = "not_configured"
 
 
-def _matches_configured_key(presented: str, settings: Settings) -> bool:
-    """Compare the presented key against every configured key without shortcuts.
+def matches_any_key(presented: str, configured: tuple[SecretStr | None, ...]) -> bool:
+    """Compare a presented key against every configured key without shortcuts.
 
-    `|=` evaluates both operands, so the previous key is compared even when the current
-    one already matched. The comparison work is therefore independent of which key the
-    caller presented.
+    `|=` evaluates both operands, so every configured key is compared even after a match.
+    The work is therefore independent of which key the caller presented.
     """
 
     candidate = presented.encode("utf-8")
-    configured = (settings.service_key, settings.service_key_previous)
     matches = False
     for key in configured:
         if key is not None:
@@ -52,13 +52,25 @@ def _matches_configured_key(presented: str, settings: Settings) -> bool:
     return matches
 
 
-def _reject(request: Request, reason: str) -> NoReturn:
+def _matches_configured_key(presented: str, settings: Settings) -> bool:
+    """Compare against the service keys, including the outgoing rotation key."""
+
+    return matches_any_key(presented, (settings.service_key, settings.service_key_previous))
+
+
+def _reject(
+    request: Request,
+    reason: str,
+    *,
+    metric: MetricName = MetricName.AUTH_REJECTIONS_TOTAL,
+    event: str = "auth.rejected",
+) -> NoReturn:
     """Log a bounded reason and raise the unchanged 401 envelope."""
 
     metrics: MetricsRecorder = request.app.state.metrics
-    metrics.increment(MetricName.AUTH_REJECTIONS_TOTAL, reason=AuthRejectionReason(reason))
+    metrics.increment(metric, reason=AuthRejectionReason(reason))
     logger.warning(
-        "auth.rejected",
+        event,
         extra={"request_id": get_request_id(request), "reason": reason},
     )
     raise HTTPException(status_code=401)
@@ -80,3 +92,36 @@ def require_service_key(request: Request) -> None:
         _reject(request, _REASON_MISSING_KEY)
     if not _matches_configured_key(presented, settings):
         _reject(request, _REASON_INVALID_KEY)
+
+
+def require_metrics_key(request: Request) -> None:
+    """Protect internal diagnostics with the separate `X-Metrics-Key` credential.
+
+    The service key never opens these endpoints and this key never opens generative
+    endpoints. Fail closed when no metrics key is configured.
+    """
+
+    settings: Settings = request.app.state.settings
+    configured = settings.metrics_key
+    presented = request.headers.get(_METRICS_KEY_HEADER)
+    if configured is None:
+        _reject(
+            request,
+            _REASON_NOT_CONFIGURED,
+            metric=MetricName.METRICS_AUTH_REJECTIONS_TOTAL,
+            event="metrics_auth.rejected",
+        )
+    if presented is None:
+        _reject(
+            request,
+            _REASON_MISSING_KEY,
+            metric=MetricName.METRICS_AUTH_REJECTIONS_TOTAL,
+            event="metrics_auth.rejected",
+        )
+    if not matches_any_key(presented, (configured,)):
+        _reject(
+            request,
+            _REASON_INVALID_KEY,
+            metric=MetricName.METRICS_AUTH_REJECTIONS_TOTAL,
+            event="metrics_auth.rejected",
+        )

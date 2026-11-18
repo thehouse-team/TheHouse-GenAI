@@ -17,7 +17,7 @@ from thehouse_genai.api.middleware import (
     SecurityHeadersMiddleware,
 )
 from thehouse_genai.api.rate_limit import InMemoryRateLimiter
-from thehouse_genai.api.routes import generative, health
+from thehouse_genai.api.routes import generative, health, internal
 from thehouse_genai.domain.moderation import MAX_TEXT_CHARS as MODERATION_MAX_TEXT_CHARS
 from thehouse_genai.domain.moderation import ModerationDecision
 from thehouse_genai.infrastructure.budget import DailyBudget
@@ -105,6 +105,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     except Exception:
         logger.error("moderation.not_configured")
         moderation_provider = _BlockingModerator()
+        app.state.moderator_configured = False
+    else:
+        app.state.moderator_configured = True
     app.state.moderation_provider = moderation_provider
 
     app.add_middleware(RequestSizeLimitMiddleware, max_bytes=resolved.max_request_bytes)
@@ -115,7 +118,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             allow_origins=resolved.cors_origins,
             allow_credentials=False,
             allow_methods=["GET", "POST", "OPTIONS"],
-            allow_headers=["Authorization", "Content-Type", "X-Request-ID", "X-Service-Key"],
+            allow_headers=[
+                "Authorization",
+                "Content-Type",
+                "X-Request-ID",
+                "X-Service-Key",
+                "X-Metrics-Key",
+            ],
         )
     # Added last so it wraps every other middleware, including the size limiter.
     app.add_middleware(SecurityHeadersMiddleware)
@@ -123,4 +132,5 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     install_exception_handlers(app)
     app.include_router(health.router)
     app.include_router(generative.router)
+    app.include_router(internal.router)
     return app

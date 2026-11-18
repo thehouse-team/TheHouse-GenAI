@@ -33,6 +33,7 @@ class MetricName(StrEnum):
     MODERATION_DECISIONS_TOTAL = "moderation_decisions_total"
     MODERATION_CATEGORIES_TOTAL = "moderation_categories_total"
     AUTH_REJECTIONS_TOTAL = "auth_rejections_total"
+    METRICS_AUTH_REJECTIONS_TOTAL = "metrics_auth_rejections_total"
     RATE_LIMIT_REJECTIONS_TOTAL = "rate_limit_rejections_total"
     BUDGET_EXHAUSTIONS_TOTAL = "budget_exhaustions_total"
 

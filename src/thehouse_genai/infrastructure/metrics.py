@@ -62,6 +62,7 @@ _COUNTER_LABELS: Final[dict[MetricName, _LabelSpec]] = {
     MetricName.MODERATION_DECISIONS_TOTAL: {"decision": _values(ModerationDecision)},
     MetricName.MODERATION_CATEGORIES_TOTAL: {"category": _values(ModerationCategory)},
     MetricName.AUTH_REJECTIONS_TOTAL: {"reason": _values(AuthRejectionReason)},
+    MetricName.METRICS_AUTH_REJECTIONS_TOTAL: {"reason": _values(AuthRejectionReason)},
     MetricName.RATE_LIMIT_REJECTIONS_TOTAL: {},
     MetricName.BUDGET_EXHAUSTIONS_TOTAL: {},
 }
