@@ -4,7 +4,8 @@ The current credential and, during rotation, the previous one are held as `Secre
 in `Settings`. Every configured key is compared in constant time on every request, so
 the key that matched cannot be inferred from timing. Every rejection produces the same
 safe 401 envelope: a caller cannot distinguish a missing header, a wrong value, an
-unconfigured credential or a rotation window.
+unconfigured credential or a rotation window. Internally, a bounded reason is logged
+with the request ID; neither the presented value nor the body is ever recorded.
 
 A previous key alone never authenticates a request: fail closed if no current key is
 configured.
@@ -12,14 +13,21 @@ configured.
 
 from __future__ import annotations
 
+import logging
 from hmac import compare_digest
-from typing import Final
+from typing import Final, NoReturn
 
 from fastapi import HTTPException, Request
 
+from thehouse_genai.api.request_context import get_request_id
 from thehouse_genai.infrastructure.config import Settings
 
+logger = logging.getLogger(__name__)
+
 _SERVICE_KEY_HEADER: Final = "x-service-key"
+_REASON_MISSING_KEY: Final = "missing_key"
+_REASON_INVALID_KEY: Final = "invalid_key"
+_REASON_NOT_CONFIGURED: Final = "not_configured"
 
 
 def _matches_configured_key(presented: str, settings: Settings) -> bool:
@@ -39,6 +47,16 @@ def _matches_configured_key(presented: str, settings: Settings) -> bool:
     return matches
 
 
+def _reject(request: Request, reason: str) -> NoReturn:
+    """Log a bounded reason and raise the unchanged 401 envelope."""
+
+    logger.warning(
+        "auth.rejected",
+        extra={"request_id": get_request_id(request), "reason": reason},
+    )
+    raise HTTPException(status_code=401)
+
+
 def require_service_key(request: Request) -> None:
     """Reject requests without the current or the previous `X-Service-Key`.
 
@@ -49,10 +67,9 @@ def require_service_key(request: Request) -> None:
     settings: Settings = request.app.state.settings
     current = settings.service_key
     presented = request.headers.get(_SERVICE_KEY_HEADER)
-    valid = (
-        current is not None
-        and presented is not None
-        and _matches_configured_key(presented, settings)
-    )
-    if not valid:
-        raise HTTPException(status_code=401)
+    if current is None:
+        _reject(request, _REASON_NOT_CONFIGURED)
+    if presented is None:
+        _reject(request, _REASON_MISSING_KEY)
+    if not _matches_configured_key(presented, settings):
+        _reject(request, _REASON_INVALID_KEY)

@@ -30,6 +30,9 @@ _LOG_EXTRA_FIELDS = (
     "generated",
     "prompt_version",
     "fallback_reason",
+    "reason",
+    "client_id",
+    "retry_after_seconds",
 )
 
 
