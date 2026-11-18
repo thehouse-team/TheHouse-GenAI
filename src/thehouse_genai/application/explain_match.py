@@ -79,6 +79,46 @@ _INJECTION_MARKERS: Final[tuple[str, ...]] = (
     "system:",
 )
 
+# Detection-only homoglyph folding (spec 005, D6). NFKC handles fullwidth and other
+# compatibility forms but does not turn Cyrillic or Greek letters into Latin ones, so an
+# explicit confusables table is needed. The folded text is used only to look for markers;
+# the explanation returned to Backend is never rewritten.
+_CONFUSABLES: Final[dict[str, str]] = {
+    chr(code): latin
+    for code, latin in (
+        # Cyrillic lower and upper case
+        (0x0430, "a"), (0x0435, "e"), (0x043E, "o"), (0x0440, "p"), (0x0441, "c"),
+        (0x0456, "i"), (0x0443, "y"), (0x0445, "x"), (0x043A, "k"), (0x043C, "m"),
+        (0x0442, "t"), (0x043D, "h"), (0x0432, "b"),
+        (0x0410, "A"), (0x0415, "E"), (0x041E, "O"), (0x041F, "P"), (0x0421, "C"),
+        (0x0406, "I"), (0x0423, "Y"), (0x0425, "X"), (0x041A, "K"), (0x041C, "M"),
+        (0x0422, "T"), (0x041D, "H"), (0x0412, "B"),
+        # Greek lower and upper case
+        (0x03B1, "a"), (0x03B5, "e"), (0x03BF, "o"), (0x03C1, "p"), (0x03B9, "i"),
+        (0x03C5, "u"), (0x03C7, "x"), (0x03BA, "k"), (0x03BC, "m"), (0x03C4, "t"),
+        (0x03BD, "v"), (0x03B2, "b"), (0x03B7, "n"),
+        (0x0391, "A"), (0x0395, "E"), (0x039F, "O"), (0x03A1, "P"), (0x0399, "I"),
+        (0x03A5, "U"), (0x03A7, "X"), (0x039A, "K"), (0x039C, "M"), (0x03A4, "T"),
+        (0x039D, "N"), (0x0392, "B"), (0x0397, "H"),
+    )
+}
+
+_ZERO_WIDTH_CHARS: Final[frozenset[str]] = frozenset(
+    {"\u200b", "\u200c", "\u200d", "\u2060", "\ufeff"}
+)
+
+
+def _normalize_for_detection(text: str) -> str:
+    """Fold homoglyphs and zero-width characters for marker detection only.
+
+    The result is a separate string: the caller never uses it as the returned
+    explanation, so validation can never alter the text that reaches Backend.
+    """
+
+    folded = unicodedata.normalize("NFKC", text)
+    without_zero_width = "".join(char for char in folded if char not in _ZERO_WIDTH_CHARS)
+    return "".join(_CONFUSABLES.get(char, char) for char in without_zero_width)
+
 # Concatenation detector (decision D14). A broad regex would flag valid words such as
 # "conde", "conforme", "delante" or "porque". A token is only suspicious when it is
 # exactly a common function-word prefix plus a domain-term suffix.
@@ -192,7 +232,8 @@ def _validate_explanation(
     if any(service in lowered and service not in mentioned for service in known):
         return "UNKNOWN_SERVICE"
 
-    if any(marker in lowered for marker in _INJECTION_MARKERS):
+    detection_text = _normalize_for_detection(lowered)
+    if any(marker in detection_text for marker in _INJECTION_MARKERS):
         return "INJECTION_MARKER"
 
     if any(currency != request.property.currency for currency in _CURRENCY_PATTERN.findall(text)):
