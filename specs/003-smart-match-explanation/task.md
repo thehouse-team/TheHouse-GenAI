@@ -1,8 +1,9 @@
 # Tareas — 003-smart-match-explanation Explicación de Smart Match
 
-- **Estado:** PLANNED
+- **Estado:** ACTIVE
 
-> No iniciar hasta que la spec sea la activa y su plan esté aprobado.
+> Spec activa en G04 sobre `feature/smart-match-explanation`. Ejecutar solo las tareas
+> de este archivo, por bloques, dejando los gates en verde en cada uno.
 
 ## Contrato y diseño
 

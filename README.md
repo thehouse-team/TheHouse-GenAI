@@ -7,7 +7,7 @@ estructurados. No calcula Smart Match, no consulta propiedades y no sustituye al
 ## Estado
 
 G01 Foundation, G02 (`002-provider-abstraction`) y G03 (`011-llm-provider`)
-implementados.
+implementados. **G04 (`003-smart-match-explanation`) en curso.**
 
 G02 define el puerto `GenerativeAiProvider`, sus DTOs inmutables, la taxonomía de
 errores, el guard central de timeout y límite de entrada, un `FakeProvider`
@@ -20,9 +20,9 @@ decisión, con las alternativas descartadas y las condiciones de revisión, en
 `specs/011-llm-provider/decision.md`. En desarrollo se usó `gemini-3.5-flash-lite` en
 la capa gratuita, con prompts sintéticos.
 
-El roadmap por fases (G01–G10) y el estado de cada spec están en `memoria.md`. Los
-contratos de IA (`explain-match`, `parse-search`) siguen planificados en `specs/` y
-todavía no se implementan.
+El roadmap por fases (G01–G10) y el estado de cada spec están en `memoria.md`. El
+contrato de `explain-match` está aprobado con Backend y se implementa en G04;
+`parse-search` sigue planificado en `specs/` y todavía no se implementa.
 
 ## Ejecución local
 

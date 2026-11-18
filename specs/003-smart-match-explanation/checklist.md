@@ -1,6 +1,6 @@
 # Checklist — 003-smart-match-explanation Explicación de Smart Match
 
-- **Estado:** PLANNED
+- **Estado:** ACTIVE
 
 ## Criterios de aceptación
 

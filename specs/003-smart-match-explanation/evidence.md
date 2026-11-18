@@ -1,8 +1,8 @@
 # Evidencia — 003-smart-match-explanation Explicación de Smart Match
 
-- **Estado:** PLANNED
-- **Fecha:** —
-- **Implementación:** no iniciada
+- **Estado:** ACTIVE
+- **Fecha:** 2026-11-17
+- **Implementación:** en curso (B1 completado; B2 en ejecución)
 
 ## Resultado
 

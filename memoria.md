@@ -1,6 +1,6 @@
 # Memoria del proyecto — TheHouse GenAI
 
-Última actualización: 2026-11-16
+Última actualización: 2026-11-17
 
 ## Identidad
 
@@ -14,7 +14,7 @@ Smart Match, no consulta propiedades y no contiene Mobile.
 | --- | --- | --- |
 | 001-foundation | IMPLEMENTED | Servicio mínimo, health, config, seguridad base, tests, CI |
 | 002-provider-abstraction | IMPLEMENTED | Puerto `GenerativeAiProvider`, DTOs, errores, fake y factory (offline) |
-| 003-smart-match-explanation | PLANNED | Explicación de match sin alterar hechos, con auth mínima de servicio |
+| 003-smart-match-explanation | ACTIVE | Explicación de match sin alterar hechos, con auth mínima de servicio |
 | 004-natural-language-search | PLANNED | Parseo de búsqueda a filtros, nunca propiedades |
 | 005-security | PLANNED | Autenticación de servicio endurecida, PII, prompt injection |
 | 006-moderation | PLANNED | Política y moderación de contenido |
@@ -45,15 +45,15 @@ cobertura) se acumulan en cada fase y la spec se cierra en G09, junto con
 
 ## Spec activa
 
-Ninguna. `011-llm-provider` (G03) pasó a `IMPLEMENTED` el 2026-11-16 con sus
+`003-smart-match-explanation` (G04), activada el 2026-11-17 sobre la rama
+`feature/smart-match-explanation` con el plan aprobado. El trabajo se hace en bloques
+pequeños (B1–B8, ver `specs/003-smart-match-explanation/plan.md`), cada uno con los
+gates en verde. `011-llm-provider` (G03) pasó a `IMPLEMENTED` el 2026-11-16 con sus
 criterios verificados, los gates en verde y la evidencia registrada en
 `specs/011-llm-provider/evidence.md`, incluido el smoke test manual ejecutado con
 una credencial real el 2026-11-16. `001-foundation` y `002-provider-abstraction`
 permanecen `IMPLEMENTED` y el resto de specs, `PLANNED`. Solo una spec puede estar
 `ACTIVE` a la vez.
-
-La siguiente spec en orden es `003-smart-match-explanation` (G04), que se activa en
-su propia rama cuando se apruebe su plan.
 
 ## Enmiendas de la constitución
 
@@ -200,6 +200,50 @@ hardcodea en el código. La matriz comparativa y las fuentes están en
   clientes HTTP ni SDKs de proveedor: el barrido de fronteras los cubre. El paquete
   publica `py.typed` para que `mypy --strict` pueda comprobar los scripts.
 
+## Decisiones tomadas en 003
+
+Plan aprobado el 2026-11-17. Contrato alineado con el borrador que Backend ya revisa.
+
+- D-1: contrato HTTP camelCase con aliases sobre modelos Python snake_case y
+  `extra="forbid"`. Nombres: `matchScore`, `distanceKm`, `budgetMax`,
+  `essentialServices`, `maxDistanceKm`, `promptVersion`.
+- D-2: la respuesta es exactamente `{explanation, generated, promptVersion}`. Sin
+  `facts_used` (queda como artefacto interno del validador), sin score como campo y sin
+  metadatos del proveedor. Se actualiza `spec.md` en consecuencia.
+- D-3: el modelo puede mencionar el porcentaje, siempre idéntico a `matchScore` y
+  validado; el score se trata como hecho autoritativo, nunca recalculado ni presentado
+  como propio (Art. 2).
+- D-4: fallo del proveedor, timeout o salida rechazada → 200 con `generated=false` y
+  plantilla de fallback. Se elimina el 502 del plan; el fallback no es un error para
+  Backend.
+- D-5: proveedor no configurado o fallido degrada con log `ERROR` y responde fallback;
+  la validación estricta de `Settings` sigue en arranque, pero el readiness del
+  proveedor queda para la spec 007.
+- D-6: `locale` opcional con default `es-MX`; cualquier otro valor da 422.
+- D-7: `university` es `str` (espera confirmación de Backend sobre la forma del dato).
+- D-8: credencial de servicio en `Settings` como `SecretStr | None`, env
+  `GENAI_SERVICE_KEY`; vacía o solo espacios se normaliza a `None` y la auth falla
+  cerrado.
+- D-9: 422 si `property.currency != preferences.currency`; no se inventa conversión.
+- D-10: medir en B5 el tamaño real de system prompt + contexto antes de decidir si se
+  sube `GENAI_MAX_INPUT_CHARS` (4000 por defecto; el guard cuenta ambos textos).
+- D-11: en B1 se alinea `AGENTS.md` para no prohibir `explain-match` (ya no es futuro) y
+  se reescribe «Fuera de esta spec».
+- D-12: vocabulario inicial de servicios en `domain`: `internet`, `agua`, `luz`, `gas`,
+  `estacionamiento`, `lavadora`, `amueblado`, `baño privado`, `mascotas`.
+- D-13: normalizar todos los números a decimal antes de compararlos con los del input.
+
+Ajustes obligatorios incorporados al diseño y a la spec:
+
+1. Regla 4 del system prompt: «no lo completes ni lo deduzcas» (se corrigen caracteres
+   CJK del borrador).
+2. Rama de trabajo: la actual `feature/smart-match-explanation`.
+3. Plantilla de fallback neutra y factual, sin «No se pudo generar»; la coincidencia se
+   atribuye a las preferencias del estudiante, no a la universidad.
+4. `price` y `budgetMax` como `Decimal` (ge 0, máximo 2 decimales), no `int`.
+5. Servicios: rechazar solo caracteres de control y longitud > 40; sin regex
+   restrictiva; delimitadores como `<untrusted_data>` se escapan en `to_context()`.
+
 ## Evidencia resumida
 
 ### 001-foundation
@@ -259,7 +303,8 @@ hardcodea en el código. La matriz comparativa y las fuentes están en
 
 ## Próximo paso
 
-G04 = `003-smart-match-explanation`: endpoint `explain-match` con autenticación mínima
-de servicio (`X-Service-Key`), sin alterar los hechos calculados por el Backend. La
-spec sigue `PLANNED`: se activa en su propia rama cuando su plan esté aprobado, y
-`004-natural-language-search` permanece `PLANNED` hasta que 003 cierre.
+G04 = `003-smart-match-explanation` (ACTIVE): endpoint `explain-match` con autenticación
+mínima de servicio (`X-Service-Key` desde `GENAI_SERVICE_KEY`), sin alterar los hechos
+calculados por el Backend. Tras B1 (docs) y B2 (config de la credencial de servicio),
+siguen B3 (dominio), B4 (auth), B5 (caso de uso), B6 (endpoint), B7 (guardrails) y B8
+(cierre). `004-natural-language-search` permanece `PLANNED` hasta que 003 cierre.
