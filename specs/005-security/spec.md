@@ -1,6 +1,6 @@
 # 005-security — Seguridad de servicio e IA
 
-- **Estado:** ACTIVE
+- **Estado:** IMPLEMENTED
 - **Depende de:** 001-foundation, 002-provider-abstraction, 003-smart-match-explanation,
   011-llm-provider
 - **Habilita:** 006, 007, 009, 010
@@ -8,6 +8,7 @@
 - **Fecha de activación:** 2026-11-17
 - **Última revisión:** 2026-11-17
 - **Plan aprobado:** 2026-11-17
+- **Cerrada:** 2026-11-17
 
 ## Objetivo
 
@@ -154,20 +155,68 @@ es una capa adicional que evita consumir esa cuota si la clave se filtra.
 
 ## Apéndice — Runbook de incidentes
 
-1. **Clave filtrada:** desplegar GenAI con la nueva en `GENAI_SERVICE_KEY` y la anterior
-   en `GENAI_SERVICE_KEY_PREVIOUS`; luego cambiar Backend; por último retirar la anterior.
-2. **Solo clave anterior configurada:** la app falla cerrado (D10). Restaurar
-   `GENAI_SERVICE_KEY` antes de seguir investigando.
-3. **429 sostenidos:** revisar `rate_limit.rejected` (`request_id`, fingerprint, reason).
-   El límite es por proceso: comprobar el número de réplicas antes de subirlo.
-4. **Inyección detectada:** `fallback_reason=INJECTION_MARKER` y el nombre del campo;
-   la request no se rechaza. Escalar si aparece en varios campos o de forma sostenida.
-5. **Secreto en logs:** retirar el registro, rotar la credencial expuesta y revisar la
-   allowlist de `JsonFormatter`. Nunca pegar el valor del secreto en el ticket.
+### Threat model y flujo de datos
+
+Backend → GenAI → proveedor (Gemini). Backend es el **único** cliente y envía el contexto
+ya validado a `POST /api/v1/generative/explain-match` con `X-Service-Key`. GenAI no
+consulta propiedades ni calcula el score: delimita y escapa los datos no confiables,
+construye el prompt, llama al proveedor detrás del puerto y valida la salida. Los
+secretos de servicio y del proveedor nunca entran en el prompt ni en los logs. Las
+amenazas cubiertas son credencial de servicio filtrada o compartida, abuso de coste,
+inyección en texto libre y fuga de PII o secretos a logs. El rate limit es por proceso;
+la visión global y el mTLS se deciden en G09/G10.
+
+### (a) Rotación de la clave de servicio
+
+1. Generar la nueva clave y conservar la anterior; **no retirarla todavía**.
+2. Desplegar GenAI con `GENAI_SERVICE_KEY=<nueva>` y `GENAI_SERVICE_KEY_PREVIOUS=<anterior>`.
+   Ambas son válidas durante la ventana. Verificar `explain-match` con cada clave.
+3. Cambiar la clave que envía Backend a la nueva y confirmar que no aparecen nuevos
+   `auth.rejected` con `reason=invalid_key`.
+4. Cuando todo el tráfico use la nueva, retirar `GENAI_SERVICE_KEY_PREVIOUS` y verificar
+   que la clave antigua vuelve a dar 401.
+5. Si no hay clave actual configurada, el servicio falla cerrado (D10): restaurar
+   `GENAI_SERVICE_KEY` antes de investigar.
+
+### (b) Fuga de credencial
+
+- **Clave de servicio:** rotar siguiendo (a) de inmediato; revisar `auth.rejected`
+  (`request_id`, `reason`) y `rate_limit.rejected` (`client_id`, `reason`) buscando picos.
+  Si se detectó abuso, subir temporalmente el límite o bloquear en el gateway.
+- **Clave de Gemini:** revocarla en AI Studio, generar una nueva, actualizar
+  `GENAI_API_KEY` y reiniciar; revisar `provider.call.failed` y el consumo de cuota del
+  proyecto. Nunca pegar la clave en el ticket.
+- En ambos casos: retirar cualquier registro que la contenga, rotar y revisar la
+  allowlist de `JsonFormatter`.
+
+### (c) Ajuste del rate limit
+
+Editar `GENAI_RATE_LIMIT_REQUESTS` y `GENAI_RATE_LIMIT_WINDOW_SECONDS` (60/60 por defecto)
+y reiniciar. `Retry-After = ceil(window - transcurrido)`, mínimo 1. El estado es por
+proceso: con N réplicas el efectivo es N× el valor configurado. Antes de subirlo,
+comprobar el número de réplicas y la cuota de Gemini: el exceso del proveedor ya degrada
+a fallback 200 con `generated=false` (D18 de 003). Verificar con `rate_limit.rejected`.
+
+### (d) Avisos de GitHub
+
+- **Push protection:** un commit intenta subir un secreto y GitHub lo bloquea. No se
+  omite la protección ni se reescribe para ocultarlo: eliminar el valor del archivo,
+  rotar la credencial expuesta y volver a hacer commit.
+- **Dependabot alerts / malware alerts:** revisar la dependencia afectada, actualizar a
+  la versión corregida y cerrar el alert; los security updates llegan como PR.
+- **CodeQL default setup:** revisar el hallazgo, comprobar si es alcanzable en este
+  servicio y corregirlo o documentar la excepción; no desactivar el análisis.
+
+### Inyección detectada
+
+`fallback_reason=INJECTION_MARKER` con el nombre del campo; la request no se rechaza (D5).
+Escalar si aparece en varios campos o de forma sostenida. Ante secretos en logs, retirar
+el registro y rotar la credencial implicada.
 
 ## Fuera de esta spec
 
-Esta spec se activó en G05 sobre la rama `feature/security-hardening`. Quedan fuera de
-alcance mTLS (D2), autenticación de usuarios, moderación (006), observabilidad avanzada
-(007), `parse-search` (004/008), HSTS y CSP en la aplicación (D9), presupuesto global de
-tokens, pentest y despliegue. El runbook es este apéndice (D7); no se crea `docs/`.
+Esta spec quedó `IMPLEMENTED` en G05 sobre la rama `feature/security-hardening`, con
+criterios verificados, gates en verde y evidencia registrada. Quedan fuera de alcance
+mTLS (D2), autenticación de usuarios, moderación (006), observabilidad avanzada (007),
+`parse-search` (004/008), HSTS y CSP en la aplicación (D9), presupuesto global de tokens,
+pentest y despliegue. El runbook es este apéndice (D7); no se crea `docs/`.

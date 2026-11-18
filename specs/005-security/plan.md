@@ -1,6 +1,6 @@
 # Plan — 005-security Seguridad de servicio e IA
 
-- **Estado:** ACTIVE
+- **Estado:** IMPLEMENTED
 - **Depende de:** 001-foundation, 002-provider-abstraction, 003-smart-match-explanation,
   011-llm-provider
 - **Plan aprobado:** 2026-11-17

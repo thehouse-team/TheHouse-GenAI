@@ -16,7 +16,7 @@ Smart Match, no consulta propiedades y no contiene Mobile.
 | 002-provider-abstraction | IMPLEMENTED | Puerto `GenerativeAiProvider`, DTOs, errores, fake y factory (offline) |
 | 003-smart-match-explanation | IMPLEMENTED | Explicación de match sin alterar hechos, con auth mínima de servicio |
 | 004-natural-language-search | PLANNED | Parseo de búsqueda a filtros, nunca propiedades |
-| 005-security | ACTIVE | Autenticación de servicio endurecida, PII, prompt injection |
+| 005-security | IMPLEMENTED | Autenticación de servicio endurecida, PII, prompt injection |
 | 006-moderation | PLANNED | Política y moderación de contenido |
 | 007-observability | PLANNED | Métricas, trazas, SLOs y alertas |
 | 008-testing | PLANNED | Estrategia completa y contract tests (transversal, cierra en G09) |
@@ -45,17 +45,18 @@ cobertura) se acumulan en cada fase y la spec se cierra en G09, junto con
 
 ## Spec activa
 
-`005-security` (G05) está `ACTIVE` desde el 2026-11-17 con plan aprobado y rama
-`feature/security-hardening`. Endurece la autenticación de servicio de 003 sin
-rehacerla: rotación de clave, rate limiting en memoria, minimización de PII, corpus de
-prompt injection, headers de seguridad, logging de seguridad y escaneo en CI.
-`003-smart-match-explanation` (G04) se cerró como `IMPLEMENTED` el 2026-11-17 con
+Ninguna. `005-security` (G05) se cerró como `IMPLEMENTED` el 2026-11-17 sobre la rama
+`feature/security-hardening` con criterios verificados, gates en verde y 536 tests sin
+red. Endureció la autenticación de servicio de 003 sin rehacerla: rotación de clave,
+rate limiting en memoria, minimización de PII, corpus de prompt injection, headers de
+seguridad, logging de 401/429 y escaneo en CI. `003-smart-match-explanation` (G04) se
+cerró como `IMPLEMENTED` el 2026-11-17 con
 criterios verificados, gates en verde, 409 tests sin red y evidencia registrada en
 `specs/003-smart-match-explanation/evidence.md`, incluidas las pruebas reales con
 `gemini-3.5-flash-lite`. `011-llm-provider` (G03) pasó a `IMPLEMENTED` el 2026-11-16 con
 sus criterios verificados, los gates en verde y la evidencia registrada en
 `specs/011-llm-provider/evidence.md`, incluido el smoke test manual ejecutado con una
-credencial real el 2026-11-16. `001-foundation`, `002-provider-abstraction` y 003
+credencial real el 2026-11-16. `001-foundation`, `002-provider-abstraction`, 003 y 005
 permanecen `IMPLEMENTED` y el resto de specs, `PLANNED`. Solo una spec puede estar
 `ACTIVE` a la vez.
 
@@ -280,6 +281,9 @@ Plan aprobado el 2026-11-17. Decisiones D1–D12 registradas al activar la spec:
 | D11 | Corpus de inyección versionado en `tests/fixtures/prompt_injection_corpus.json`. |
 | D12 | Los logs de 429 incluyen el fingerprint del cliente (hash truncado), nunca la clave. |
 
+Las doce decisiones se aplicaron íntegramente; el detalle está en
+`specs/005-security/spec.md` y los resultados en `specs/005-security/evidence.md`.
+
 El único cliente es Backend, así que el rate limit por cliente es efectivamente global
 para el tráfico legítimo. Gemini en capa gratuita limita ~15 RPM y el exceso termina en
 fallback 200 con `generated=false`; el rate limit de GenAI protege contra abuso si la
@@ -332,6 +336,18 @@ explicaciones en Backend y manejo del 429 como «sin explicación».
 - Rama `feature/smart-match-explanation`: 8 commits (B1–B7b más el cierre documental).
 - Evidencia completa en `specs/003-smart-match-explanation/evidence.md`.
 
+### 005-security
+
+- `ruff check .`: sin hallazgos.
+- `mypy src`: sin errores (strict) en 25 archivos.
+- `pytest`: 536 tests aprobados, sin red (guard `block_network`), 1 warning heredado de
+  `TestClient` (deuda de 008).
+- Prueba manual real del 2026-11-17 con Gemini y `GENAI_RATE_LIMIT_REQUESTS=2`: dos 200
+  y un tercer 429 con `Retry-After` sin llamar al proveedor; los cuatro headers de
+  seguridad presentes también en los errores.
+- Rama `feature/security-hardening`: 8 commits (B0–B7 más el cierre documental).
+- Evidencia completa en `specs/005-security/evidence.md`.
+
 ## Deuda y pendientes
 
 - `GENAI_API_KEY=` y `GENAI_MODEL=` vacíos quedaban como `SecretStr('')` y `''` en lugar
@@ -349,11 +365,18 @@ explicaciones en Backend y manejo del 429 como «sin explicación».
   (`gemini-3.5-flash-lite`) queda por anotar desde la fuente de precios, y el modelo de
   producción se decide cuando se cree el proyecto de pago (G09).
 - Contratos y guardrails de parseo (004). Los de explicación (003) están cerrados.
-- `005-security` está activa en G05: rota la clave de servicio, limita por fingerprint,
-  fija la allowlist de PII, normaliza la salida contra homoglifos y registra 401/429.
-  La auth mínima de 003 ya está implementada; mTLS queda para G09/G10 (D2).
-- Deuda para G09 derivada del rate limit: caché de explicaciones en Backend y manejo del
-  429 como «sin explicación» (no como error de usuario).
+- `005-security` quedó `IMPLEMENTED` en G05; la auth mínima de 003 sigue vigente y mTLS
+  queda para G09/G10 (D2).
+- Deuda (a): el rate limit es por proceso; revisar el límite efectivo con varias
+  instancias y trasladarlo al gateway en G10.
+- Deuda (b): HSTS y la cabecera `Server` se deciden en despliegue (G10); CSP queda fuera
+  de la aplicación (D9).
+- Deuda (c): caché de explicaciones en Backend y manejo del 429 como «sin explicación»
+  (no como error de usuario) en G09.
+- Deuda (d): un body que no es JSON válido se rechaza al parsearse, antes de la
+  autenticación (422 en TestClient, 400 en la prueba manual real). El mensaje es genérico
+  y no expone datos; no se cambió el orden de procesamiento. Evaluar en G09/G10 si Backend
+  debe validar el body antes de enviarlo.
 - Timeouts de producción (D18): `GENAI_TIMEOUT_SECONDS=6` en GenAI y 8 s en el cliente
   del Backend, pendiente de aplicar en G09/G10. El default de `Settings` sigue en 15 s
   y el pico real de 9639 ms queda registrado en la evidencia de 003.
@@ -362,19 +385,17 @@ explicaciones en Backend y manejo del 429 como «sin explicación».
 - Vocabulario de servicios D12 (`internet`, `agua`, `luz`, `gas`, `estacionamiento`,
   `lavadora`, `amueblado`, `baño privado`, `mascotas`) pendiente de confirmar con
   Backend; es detector de alucinaciones, no una restricción de entrada.
-- `StarletteDeprecationWarning` de `TestClient` con `httpx`: deuda vigente, se revisa en
-  008.
+- Deuda (e): `StarletteDeprecationWarning` de `TestClient` con `httpx`: se mantiene y se
+  revisa en 008.
 - Moderación, observabilidad avanzada, contract tests e integración (006–010).
 - No hay despliegue. Hay una credencial de desarrollo en el entorno local, fuera del
   repositorio: la capa gratuita de Gemini se usa solo con prompts sintéticos.
 
 ## Próximo paso
 
-G05 = `005-security` está en curso sobre `feature/security-hardening`: rotación de la
-clave de servicio, rate limiting por cliente en memoria, allowlist de PII, corpus
-versionado de prompt injection, headers de seguridad, logging de 401/429 y escaneo en
-CI. mTLS queda fuera y documentado para G09/G10 (D2). Les siguen G06 (`006-moderation`),
-G07 (`007-observability`, donde se decide el readiness del proveedor), G08
+G06 = `006-moderation`: política y moderación de contenido. Les siguen G07
+(`007-observability`, donde se decide el readiness del proveedor), G08
 (`004-natural-language-search`) y G09/G10, donde se aplican los timeouts de producción
-de D18 y se decide el despliegue (incluidos mTLS, HSTS/CSP y el rate limit global).
-`004-natural-language-search` permanece `PLANNED`.
+de D18 y se decide el despliegue (incluidos mTLS, HSTS/CSP, la cabecera `Server` y el
+rate limit global, deudas (a) y (b) de 005). `004-natural-language-search` permanece
+`PLANNED`.

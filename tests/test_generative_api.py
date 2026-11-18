@@ -221,6 +221,28 @@ def test_request_id_is_echoed_on_success_and_errors(
     assert response.headers["X-Request-ID"] == "req-generative-1"
 
 
+def test_invalid_json_without_key_is_rejected_before_authentication() -> None:
+    """A malformed body is rejected while parsing, before the auth dependency runs.
+
+    TestClient returns 422 here; the manual uvicorn run with a mis-encoded accent
+    returned 400. In both cases the body error precedes the 401 and the message is
+    generic, so no request data is exposed. See the known behavior in spec 005.
+    """
+
+    with _client(_provider()) as client:
+        response = client.post(
+            URL,
+            content=b"{not valid json",
+            headers={"Content-Type": "application/json"},
+        )
+
+    assert response.status_code == 422
+    error = response.json()["error"]
+    assert error["code"] == "VALIDATION_ERROR"
+    assert error["message"] == "Request validation failed."
+    assert error["request_id"]
+
+
 def test_oversized_body_is_rejected() -> None:
     with _client(_provider(), max_request_bytes=1_024) as client:
         response = client.post(

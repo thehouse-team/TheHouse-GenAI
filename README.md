@@ -6,10 +6,10 @@ estructurados. No calcula Smart Match, no consulta propiedades y no sustituye al
 
 ## Estado
 
-G01 Foundation, G02 (`002-provider-abstraction`), G03 (`011-llm-provider`) y G04
-(`003-smart-match-explanation`) implementados. G05 (`005-security`) está en curso:
-endurece la autenticación de servicio de 003 con rotación de clave, rate limiting,
-allowlist de PII, corpus de inyección y logging de seguridad, sin cambiar el contrato de
+G01 Foundation, G02 (`002-provider-abstraction`), G03 (`011-llm-provider`), G04
+(`003-smart-match-explanation`) y G05 (`005-security`) implementados. G05 endurece la
+autenticación de servicio de 003 con rotación de clave, rate limiting, allowlist de PII,
+corpus de inyección, headers de seguridad y logging, sin cambiar el contrato de
 `explain-match`.
 
 G02 define el puerto `GenerativeAiProvider`, sus DTOs inmutables, la taxonomía de
@@ -35,8 +35,10 @@ clave inválida responde `401` con el sobre de error estándar. La autenticació
 antes de validar el body. Durante la rotación se aceptan dos claves: la actual
 (`GENAI_SERVICE_KEY`) y la anterior (`GENAI_SERVICE_KEY_PREVIOUS`); si no hay clave
 actual, el servicio falla cerrado. El acceso se limita por cliente a 60 peticiones por
-minuto en memoria del proceso, con `429` y `Retry-After` al excederse. mTLS queda fuera
-de alcance y se decide en G09/G10.
+minuto en memoria del proceso, con `429` y `Retry-After` al excederse. Para el Backend,
+un `429` significa «sin explicación» (no un error de usuario): no debe reintentar antes
+del tiempo indicado en `Retry-After` y puede mostrar la respuesta de plantilla. mTLS
+queda fuera de alcance y se decide en G09/G10.
 
 Request (camelCase, campos obligatorios salvo `locale` y las listas de servicios):
 
