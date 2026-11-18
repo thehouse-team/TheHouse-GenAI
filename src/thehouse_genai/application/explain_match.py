@@ -25,10 +25,18 @@ from thehouse_genai.domain.match_explanation import (
     format_mxn,
     normalize_number,
 )
+from thehouse_genai.domain.moderation import ModerationDecision
 from thehouse_genai.providers.base import (
     GenerativeAiProvider,
     GenerativeAiRequest,
     ProviderError,
+)
+from thehouse_genai.providers.moderation import (
+    ModerationField,
+    ModerationProvider,
+    ModerationRequest,
+    ModerationResponse,
+    category_for_reasons,
 )
 
 logger = logging.getLogger(__name__)
@@ -268,13 +276,12 @@ def _fallback_explanation(request: ExplainMatchRequest) -> str:
     services = ", ".join(request.property.services)
     service_clause = f" y cuenta con {services}" if services else ""
     distance = request.property.distance_km
+    # The title is free text written by the landlord and may carry PII, insults or
+    # instructions (decision A6), so the template uses structured facts only.
     text = (
         f"Esta propiedad tiene una coincidencia del {request.match_score}% con tus preferencias. "
-        f"{request.property.title} cuesta "
-        f"{format_mxn(request.property.price, request.property.currency)}, "
-        f"está a {distance} km de la {request.university}{service_clause}. "
-        f"Tu presupuesto es de "
-        f"{format_mxn(request.preferences.budget_max, request.preferences.currency)}."
+        f"Cuesta {format_mxn(request.property.price, request.property.currency)}, "
+        f"está a {distance} km de la {request.university}{service_clause}."
     )
     return _bounded(text)
 
@@ -286,13 +293,19 @@ class ExplainMatch:
         self,
         provider: GenerativeAiProvider | None,
         *,
+        moderator: ModerationProvider | None = None,
         prompt_version: str = EXPLAIN_MATCH_PROMPT_VERSION,
         max_words: int = MAX_WORDS,
         max_output_tokens: int = MAX_OUTPUT_TOKENS,
     ) -> None:
-        """Bind the port and the bounded generation settings."""
+        """Bind the ports and the bounded generation settings.
+
+        The moderator is optional so direct unit tests of 003 keep their original
+        behaviour; the HTTP layer always injects one.
+        """
 
         self._provider = provider
+        self._moderator = moderator
         self._prompt_version = prompt_version
         self._max_words = max_words
         self._max_output_tokens = max_output_tokens
@@ -329,24 +342,55 @@ class ExplainMatch:
         if reason is not None:
             return self._reject(request, reason)
 
-        self._log(generated=True, reason=None)
+        moderation: ModerationResponse | None = None
+        if self._moderator is not None:
+            # Moderate the raw completion: the typographic normalization above inserts
+            # a space after an inner period, which would hide `ejemplo.mx` domains.
+            try:
+                moderation = await self._moderator.check(
+                    ModerationRequest(
+                        text=payload.explanation,
+                        field_hint=ModerationField.GENERATED_EXPLANATION,
+                    )
+                )
+            except Exception:
+                # Fail closed: an unchecked completion is never returned (A2).
+                return self._reject(request, "MODERATION_UNAVAILABLE")
+            if moderation.decision is ModerationDecision.BLOCK:
+                return self._reject(request, "MODERATION_BLOCKED", moderation=moderation)
+            if moderation.decision is ModerationDecision.REVIEW:
+                return self._reject(request, "MODERATION_REVIEW", moderation=moderation)
+
+        self._log(generated=True, reason=None, moderation=moderation)
         return ExplainMatchResponse(
             explanation=explanation,
             generated=True,
             promptVersion=self._prompt_version,
         )
 
-    def _reject(self, request: ExplainMatchRequest, reason: str) -> ExplainMatchResponse:
+    def _reject(
+        self,
+        request: ExplainMatchRequest,
+        reason: str,
+        *,
+        moderation: ModerationResponse | None = None,
+    ) -> ExplainMatchResponse:
         """Log the stable reason and return the template fallback."""
 
-        self._log(generated=False, reason=reason)
+        self._log(generated=False, reason=reason, moderation=moderation)
         return ExplainMatchResponse(
             explanation=_fallback_explanation(request),
             generated=False,
             promptVersion=self._prompt_version,
         )
 
-    def _log(self, *, generated: bool, reason: str | None) -> None:
+    def _log(
+        self,
+        *,
+        generated: bool,
+        reason: str | None,
+        moderation: ModerationResponse | None = None,
+    ) -> None:
         """Emit metadata only: never the prompt, the completion or input data."""
 
         extra: dict[str, object] = {
@@ -355,6 +399,14 @@ class ExplainMatch:
         }
         if reason is not None:
             extra["fallback_reason"] = reason
+        if moderation is not None:
+            extra["moderation_decision"] = moderation.decision.value
+            extra["policy_version"] = moderation.policy_version
+            categories = category_for_reasons(moderation.reasons)
+            if categories:
+                extra["moderation_category"] = ",".join(
+                    category.value for category in categories
+                )
         if generated:
             logger.info("explain_match.completed", extra=extra)
         elif reason == "NO_PROVIDER":

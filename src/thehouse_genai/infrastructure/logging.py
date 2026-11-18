@@ -5,7 +5,8 @@ must never be passed as log fields.
 
 The provider block adds the call metadata of the LLM adapters: the provider, the
 internal model id, the error code, the duration and the lengths of the prompt and
-the completion. Lengths are metadata, never content.
+the completion. Lengths are metadata, never content. The moderation block adds only
+the decision, the category codes and the policy version; never the moderated text.
 """
 
 from __future__ import annotations
@@ -33,6 +34,9 @@ _LOG_EXTRA_FIELDS = (
     "reason",
     "client_id",
     "retry_after_seconds",
+    "moderation_decision",
+    "moderation_category",
+    "policy_version",
 )
 
 

@@ -18,6 +18,8 @@ from thehouse_genai.api.middleware import (
 )
 from thehouse_genai.api.rate_limit import InMemoryRateLimiter
 from thehouse_genai.api.routes import generative, health
+from thehouse_genai.domain.moderation import MAX_TEXT_CHARS as MODERATION_MAX_TEXT_CHARS
+from thehouse_genai.domain.moderation import ModerationDecision
 from thehouse_genai.infrastructure.config import Settings, get_settings
 from thehouse_genai.infrastructure.logging import configure_logging
 from thehouse_genai.providers.base import GenerativeAiProvider
@@ -26,8 +28,24 @@ from thehouse_genai.providers.factory import (
     UnsupportedProviderError,
     build_provider,
 )
+from thehouse_genai.providers.moderation import (
+    GuardedModerationProvider,
+    LocalRuleModerator,
+    ModerationProvider,
+    ModerationRequest,
+    ModerationResponse,
+)
 
 logger = logging.getLogger(__name__)
+
+
+class _BlockingModerator:
+    """Fail-closed moderator used when the local moderator cannot be built."""
+
+    async def check(self, request: ModerationRequest) -> ModerationResponse:
+        """Block every completion; no text is ever returned unchecked."""
+
+        return ModerationResponse(decision=ModerationDecision.BLOCK)
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -64,6 +82,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         logger.error("provider.not_configured")
         provider = None
     app.state.provider = provider
+
+    try:
+        moderation_provider: ModerationProvider = GuardedModerationProvider(
+            LocalRuleModerator(),
+            timeout_seconds=resolved.genai_timeout_seconds,
+            max_text_chars=MODERATION_MAX_TEXT_CHARS,
+        )
+    except Exception:
+        logger.error("moderation.not_configured")
+        moderation_provider = _BlockingModerator()
+    app.state.moderation_provider = moderation_provider
 
     app.add_middleware(RequestSizeLimitMiddleware, max_bytes=resolved.max_request_bytes)
     app.add_middleware(RequestContextMiddleware)

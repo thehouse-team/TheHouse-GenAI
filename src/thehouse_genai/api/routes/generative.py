@@ -11,6 +11,7 @@ from thehouse_genai.api.rate_limit import enforce_rate_limit
 from thehouse_genai.application.explain_match import EXPLAIN_MATCH_PROMPT_VERSION, ExplainMatch
 from thehouse_genai.domain.match_explanation import ExplainMatchRequest, ExplainMatchResponse
 from thehouse_genai.providers.base import GenerativeAiProvider
+from thehouse_genai.providers.moderation import ModerationProvider
 
 router = APIRouter(
     prefix="/api/v1/generative",
@@ -20,10 +21,15 @@ router = APIRouter(
 
 
 def _get_use_case(request: Request) -> ExplainMatch:
-    """Resolve the provider built at startup and bind it to the use case."""
+    """Resolve the ports built at startup and bind them to the use case."""
 
     provider: GenerativeAiProvider | None = request.app.state.provider
-    return ExplainMatch(provider, prompt_version=EXPLAIN_MATCH_PROMPT_VERSION)
+    moderator: ModerationProvider = request.app.state.moderation_provider
+    return ExplainMatch(
+        provider,
+        moderator=moderator,
+        prompt_version=EXPLAIN_MATCH_PROMPT_VERSION,
+    )
 
 
 @router.post(
