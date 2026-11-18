@@ -16,6 +16,15 @@ from typing import Final
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from thehouse_genai.application.metrics_port import (
+    CallOutcome,
+    FallbackReason,
+    GeneratedFlag,
+    MetricName,
+    MetricsRecorder,
+    ProviderErrorCode,
+    TokenDirection,
+)
 from thehouse_genai.domain.match_explanation import (
     KNOWN_SERVICES,
     ExplainMatchRequest,
@@ -29,6 +38,7 @@ from thehouse_genai.domain.moderation import ModerationDecision
 from thehouse_genai.providers.base import (
     GenerativeAiProvider,
     GenerativeAiRequest,
+    GenerativeAiUsage,
     ProviderError,
 )
 from thehouse_genai.providers.moderation import (
@@ -294,18 +304,20 @@ class ExplainMatch:
         provider: GenerativeAiProvider | None,
         *,
         moderator: ModerationProvider | None = None,
+        metrics: MetricsRecorder | None = None,
         prompt_version: str = EXPLAIN_MATCH_PROMPT_VERSION,
         max_words: int = MAX_WORDS,
         max_output_tokens: int = MAX_OUTPUT_TOKENS,
     ) -> None:
         """Bind the ports and the bounded generation settings.
 
-        The moderator is optional so direct unit tests of 003 keep their original
-        behaviour; the HTTP layer always injects one.
+        The moderator and the recorder are optional so direct unit tests of 003 keep
+        their original behaviour; the HTTP layer always injects both.
         """
 
         self._provider = provider
         self._moderator = moderator
+        self._metrics = metrics
         self._prompt_version = prompt_version
         self._max_words = max_words
         self._max_output_tokens = max_output_tokens
@@ -325,8 +337,10 @@ class ExplainMatch:
         )
         try:
             completion = await self._provider.generate(port_request)
-        except ProviderError:
+        except ProviderError as exc:
+            self._record_provider_error(exc)
             return self._reject(request, "PROVIDER_ERROR")
+        self._record_provider_success(completion.usage)
 
         try:
             payload = _ExplanationPayload.model_validate_json(completion.text)
@@ -368,6 +382,34 @@ class ExplainMatch:
             promptVersion=self._prompt_version,
         )
 
+    def _record_provider_success(self, usage: GenerativeAiUsage) -> None:
+        """Record the single provider call and the usage reported by the vendor."""
+
+        if self._metrics is None:
+            return
+        self._metrics.increment(MetricName.PROVIDER_CALLS_TOTAL, outcome=CallOutcome.SUCCESS)
+        self._metrics.increment(
+            MetricName.PROVIDER_TOKENS_TOTAL,
+            amount=usage.input_tokens,
+            direction=TokenDirection.INPUT,
+        )
+        self._metrics.increment(
+            MetricName.PROVIDER_TOKENS_TOTAL,
+            amount=usage.output_tokens,
+            direction=TokenDirection.OUTPUT,
+        )
+
+    def _record_provider_error(self, error: ProviderError) -> None:
+        """Record a failed call with its stable taxonomy code."""
+
+        if self._metrics is None:
+            return
+        self._metrics.increment(MetricName.PROVIDER_CALLS_TOTAL, outcome=CallOutcome.ERROR)
+        self._metrics.increment(
+            MetricName.PROVIDER_ERRORS_TOTAL,
+            code=ProviderErrorCode(error.code),
+        )
+
     def _reject(
         self,
         request: ExplainMatchRequest,
@@ -392,6 +434,27 @@ class ExplainMatch:
         moderation: ModerationResponse | None = None,
     ) -> None:
         """Emit metadata only: never the prompt, the completion or input data."""
+
+        if self._metrics is not None:
+            self._metrics.increment(
+                MetricName.EXPLAIN_MATCH_OUTCOMES_TOTAL,
+                generated=GeneratedFlag.TRUE if generated else GeneratedFlag.FALSE,
+            )
+            if reason is not None:
+                self._metrics.increment(
+                    MetricName.EXPLAIN_MATCH_FALLBACKS_TOTAL,
+                    reason=FallbackReason(reason),
+                )
+            if moderation is not None:
+                self._metrics.increment(
+                    MetricName.MODERATION_DECISIONS_TOTAL,
+                    decision=moderation.decision,
+                )
+                for category in category_for_reasons(moderation.reasons):
+                    self._metrics.increment(
+                        MetricName.MODERATION_CATEGORIES_TOTAL,
+                        category=category,
+                    )
 
         extra: dict[str, object] = {
             "generated": generated,

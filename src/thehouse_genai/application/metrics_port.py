@@ -214,8 +214,8 @@ class MetricsRecorder(Protocol):
     accepting free-form strings, so user data can never become a label.
     """
 
-    def increment(self, name: str, **labels: str) -> None:
-        """Add one to a counter."""
+    def increment(self, name: str, *, amount: int = 1, **labels: str) -> None:
+        """Add ``amount`` to a counter; token counters use the reported usage."""
 
     def observe(self, name: str, value_ms: float, **labels: str) -> None:
         """Add one latency observation to a histogram."""

@@ -20,6 +20,11 @@ from typing import Final, NoReturn
 from fastapi import HTTPException, Request
 
 from thehouse_genai.api.request_context import get_request_id
+from thehouse_genai.application.metrics_port import (
+    AuthRejectionReason,
+    MetricName,
+    MetricsRecorder,
+)
 from thehouse_genai.infrastructure.config import Settings
 
 logger = logging.getLogger(__name__)
@@ -50,6 +55,8 @@ def _matches_configured_key(presented: str, settings: Settings) -> bool:
 def _reject(request: Request, reason: str) -> NoReturn:
     """Log a bounded reason and raise the unchanged 401 envelope."""
 
+    metrics: MetricsRecorder = request.app.state.metrics
+    metrics.increment(MetricName.AUTH_REJECTIONS_TOTAL, reason=AuthRejectionReason(reason))
     logger.warning(
         "auth.rejected",
         extra={"request_id": get_request_id(request), "reason": reason},

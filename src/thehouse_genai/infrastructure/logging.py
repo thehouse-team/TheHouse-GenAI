@@ -17,6 +17,8 @@ import sys
 from datetime import UTC, datetime
 from typing import Any
 
+from thehouse_genai.api.request_context import request_id_ctx
+
 _LOG_EXTRA_FIELDS = (
     "request_id",
     "method",
@@ -38,6 +40,21 @@ _LOG_EXTRA_FIELDS = (
     "moderation_category",
     "policy_version",
 )
+
+
+class RequestIdFilter(logging.Filter):
+    """Attach the sanitized request ID from the context to structured records.
+
+    The value is correlation metadata only: it is never part of a provider request, and
+    it never overwrites an explicit request ID already set by the caller.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if not hasattr(record, "request_id"):
+            request_id = request_id_ctx.get()
+            if request_id != "-":
+                record.request_id = request_id
+        return True
 
 
 class JsonFormatter(logging.Formatter):
@@ -76,3 +93,13 @@ def configure_logging(level: str = "INFO") -> None:
     logging.getLogger("uvicorn.access").disabled = True
     # The HTTP client emits one INFO line per call; keep only our controlled logs.
     logging.getLogger("httpx").setLevel(logging.WARNING)
+
+    # Correlate provider and use-case logs with the request that caused them. Filters are
+    # installed once per logger so repeated create_app calls do not stack them.
+    for name in (
+        "thehouse_genai.providers.gemini",
+        "thehouse_genai.application.explain_match",
+    ):
+        target = logging.getLogger(name)
+        if not any(isinstance(item, RequestIdFilter) for item in target.filters):
+            target.addFilter(RequestIdFilter())

@@ -18,6 +18,7 @@ from typing import Final
 from fastapi import HTTPException, Request
 
 from thehouse_genai.api.request_context import get_request_id
+from thehouse_genai.application.metrics_port import MetricName, MetricsRecorder
 from thehouse_genai.infrastructure.config import Settings
 from thehouse_genai.infrastructure.redaction import fingerprint
 
@@ -103,6 +104,8 @@ async def enforce_rate_limit(request: Request) -> None:
     allowed, retry_after = limiter.check(client_id)
     if allowed:
         return
+    metrics: MetricsRecorder = request.app.state.metrics
+    metrics.increment(MetricName.RATE_LIMIT_REJECTIONS_TOTAL)
     logger.warning(
         "rate_limit.rejected",
         extra={

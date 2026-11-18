@@ -173,14 +173,16 @@ class MetricsRegistry:
         self._counters: dict[_MetricKey, int] = {}
         self._histograms: dict[_MetricKey, _Histogram] = {}
 
-    def increment(self, name: str, **labels: str) -> None:
-        """Add one to a counter, or reject an unknown name or label set."""
+    def increment(self, name: str, *, amount: int = 1, **labels: str) -> None:
+        """Add ``amount`` to a counter, or reject an unknown name or label set."""
 
+        if amount < 0:
+            raise ValueError("amount must not be negative")
         metric = self._counter_metric(name)
         normalized = _normalize_labels(metric.value, labels, _COUNTER_LABELS[metric])
         key = (metric.value, normalized)
         with self._lock:
-            self._counters[key] = self._counters.get(key, 0) + 1
+            self._counters[key] = self._counters.get(key, 0) + amount
 
     def observe(self, name: str, value_ms: float, **labels: str) -> None:
         """Add one latency observation, or reject an unknown name or label set."""
