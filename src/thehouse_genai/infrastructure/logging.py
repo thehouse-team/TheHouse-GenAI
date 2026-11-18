@@ -27,6 +27,9 @@ _LOG_EXTRA_FIELDS = (
     "error_code",
     "prompt_chars",
     "completion_chars",
+    "generated",
+    "prompt_version",
+    "fallback_reason",
 )
 
 
