@@ -25,7 +25,9 @@ class Settings(BaseSettings):
     instead of calling anything. Never log `genai_api_key`.
 
     Since spec 003, `service_key` holds the service-to-service credential as a
-    `SecretStr`; it is never logged nor serialized.
+    `SecretStr`; it is never logged nor serialized. Since spec 005,
+    `service_key_previous` holds the outgoing key during rotation and is treated the
+    same way.
     """
 
     model_config = SettingsConfigDict(
@@ -41,12 +43,42 @@ class Settings(BaseSettings):
     cors_origins: Annotated[list[str], NoDecode] = Field(default_factory=list)
     max_request_bytes: int = Field(default=65_536, ge=1_024, le=10_485_760)
 
-    # Service-to-service authentication for the generative endpoints (spec 003).
-    # Only GENAI_SERVICE_KEY is read from the environment; `service_key` remains
-    # available as an init kwarg through `populate_by_name`. Never log `service_key`.
+    # Process-local rate limiting (spec 005). The state is per process: with several
+    # replicas the effective limit is N times the configured one; see spec 005.
+    rate_limit_enabled: bool = Field(
+        default=True,
+        validation_alias="GENAI_RATE_LIMIT_ENABLED",
+    )
+    rate_limit_requests: int = Field(
+        default=60,
+        ge=1,
+        le=100_000,
+        validation_alias="GENAI_RATE_LIMIT_REQUESTS",
+    )
+    rate_limit_window_seconds: int = Field(
+        default=60,
+        ge=1,
+        le=86_400,
+        validation_alias="GENAI_RATE_LIMIT_WINDOW_SECONDS",
+    )
+    rate_limit_max_clients: int = Field(
+        default=1_000,
+        ge=1,
+        le=1_000_000,
+        validation_alias="GENAI_RATE_LIMIT_MAX_CLIENTS",
+    )
+
+    # Service-to-service authentication for the generative endpoints (spec 003,
+    # rotation added in 005). Only the GENAI_ prefixed variables are read from the
+    # environment; the field names are mapped below for explicit construction.
+    # Never log either credential.
     service_key: SecretStr | None = Field(
         default=None,
         validation_alias="GENAI_SERVICE_KEY",
+    )
+    service_key_previous: SecretStr | None = Field(
+        default=None,
+        validation_alias="GENAI_SERVICE_KEY_PREVIOUS",
     )
 
     # Provider configuration (spec 002, extended by spec 011). "gemini" is accepted
@@ -106,20 +138,35 @@ class Settings(BaseSettings):
 
     @model_validator(mode="before")
     @classmethod
-    def _accept_service_key_kwarg(cls, data: Any) -> Any:
-        """Allow the `service_key` init kwarg without exposing it as an env var.
+    def _accept_aliased_kwargs(cls, data: Any) -> Any:
+        """Map field names to their `GENAI_` aliases for explicit construction.
 
-        Only `GENAI_SERVICE_KEY` is a valid environment source; the field name is
-        mapped here so tests and explicit construction can still use `service_key`.
+        Only the `GENAI_`-prefixed variables are valid environment sources; field names
+        are accepted here so tests and explicit construction can still use them.
         """
 
-        if isinstance(data, dict) and "service_key" in data and "GENAI_SERVICE_KEY" not in data:
-            return {**data, "GENAI_SERVICE_KEY": data["service_key"]}
-        return data
+        if not isinstance(data, dict):
+            return data
+        mapped = dict(data)
+        aliases: dict[str, str] = {
+            "service_key": "GENAI_SERVICE_KEY",
+            "service_key_previous": "GENAI_SERVICE_KEY_PREVIOUS",
+        }
+        for field_name in (
+            "rate_limit_enabled",
+            "rate_limit_requests",
+            "rate_limit_window_seconds",
+            "rate_limit_max_clients",
+        ):
+            aliases[field_name] = f"GENAI_{field_name.upper()}"
+        for field_name, env_name in aliases.items():
+            if field_name in mapped and env_name not in mapped:
+                mapped[env_name] = mapped[field_name]
+        return mapped
 
-    @field_validator("service_key", mode="before")
+    @field_validator("service_key", "service_key_previous", mode="before")
     @classmethod
-    def _normalize_service_key(cls, value: Any) -> Any:
+    def _normalize_service_keys(cls, value: Any) -> Any:
         """Treat a blank service key as unset instead of an empty secret."""
 
         if value is None:

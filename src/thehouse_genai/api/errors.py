@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
+from typing import Final
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -12,6 +14,18 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from thehouse_genai.api.request_context import get_request_id
 
 logger = logging.getLogger(__name__)
+
+# Only these headers are forwarded from an HTTPException to the client envelope.
+_ALLOWED_EXCEPTION_HEADERS: Final[frozenset[str]] = frozenset({"retry-after"})
+
+# Fixed security headers for every response. Defined here as well as used by the
+# middleware because an unhandled 500 is rendered outside the user middleware stack.
+SECURITY_RESPONSE_HEADERS: Final[dict[str, str]] = {
+    "Cache-Control": "no-store",
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "no-referrer",
+    "X-Frame-Options": "DENY",
+}
 
 _ERROR_CODES = {
     400: "BAD_REQUEST",
@@ -42,15 +56,31 @@ _SAFE_MESSAGES = {
 }
 
 
+def _safe_headers(headers: Mapping[str, str] | None) -> dict[str, str]:
+    """Keep only allowlisted headers, so an exception cannot leak arbitrary ones."""
+
+    if not headers:
+        return {}
+    return {
+        name: value for name, value in headers.items() if name.lower() in _ALLOWED_EXCEPTION_HEADERS
+    }
+
+
 def error_response(
     *,
     status_code: int,
     code: str,
     message: str,
     request_id: str,
+    headers: Mapping[str, str] | None = None,
 ) -> JSONResponse:
     """Build the single error envelope used by every endpoint."""
 
+    response_headers = {
+        "X-Request-ID": request_id,
+        **SECURITY_RESPONSE_HEADERS,
+        **_safe_headers(headers),
+    }
     return JSONResponse(
         status_code=status_code,
         content={
@@ -60,7 +90,7 @@ def error_response(
                 "request_id": request_id,
             }
         },
-        headers={"X-Request-ID": request_id},
+        headers=response_headers,
     )
 
 
@@ -76,6 +106,7 @@ def install_exception_handlers(app: FastAPI) -> None:
             code=_ERROR_CODES.get(exc.status_code, "HTTP_ERROR"),
             message=_SAFE_MESSAGES.get(exc.status_code, "Request could not be completed."),
             request_id=get_request_id(request),
+            headers=exc.headers,
         )
 
     @app.exception_handler(RequestValidationError)

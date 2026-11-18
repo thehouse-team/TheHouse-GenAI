@@ -241,3 +241,81 @@ def test_service_key_is_not_exposed_in_repr() -> None:
     assert "super-secret-service-key" not in repr(settings)
     assert settings.service_key is not None
     assert settings.service_key.get_secret_value() == "super-secret-service-key"
+
+
+def test_rate_limit_defaults_are_enabled() -> None:
+    settings = Settings(_env_file=None)
+
+    assert settings.rate_limit_enabled is True
+    assert settings.rate_limit_requests == 60
+    assert settings.rate_limit_window_seconds == 60
+    assert settings.rate_limit_max_clients == 1_000
+
+
+def test_rate_limit_reads_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("GENAI_RATE_LIMIT_ENABLED", "false")
+    monkeypatch.setenv("GENAI_RATE_LIMIT_REQUESTS", "5")
+    monkeypatch.setenv("GENAI_RATE_LIMIT_WINDOW_SECONDS", "30")
+    monkeypatch.setenv("GENAI_RATE_LIMIT_MAX_CLIENTS", "20")
+
+    settings = Settings(_env_file=None)
+
+    assert settings.rate_limit_enabled is False
+    assert settings.rate_limit_requests == 5
+    assert settings.rate_limit_window_seconds == 30
+    assert settings.rate_limit_max_clients == 20
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"rate_limit_requests": 0},
+        {"rate_limit_requests": -1},
+        {"rate_limit_window_seconds": 0},
+        {"rate_limit_max_clients": 0},
+    ],
+)
+def test_rate_limit_rejects_non_positive_values(overrides: dict[str, object]) -> None:
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, **overrides)
+
+
+def test_service_key_previous_defaults_to_none(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("GENAI_SERVICE_KEY_PREVIOUS", raising=False)
+
+    settings = Settings(_env_file=None)
+
+    assert settings.service_key_previous is None
+
+
+@pytest.mark.parametrize("value", ["", "   "])
+def test_blank_service_key_previous_is_none(value: str) -> None:
+    settings = Settings(_env_file=None, service_key_previous=value)
+
+    assert settings.service_key_previous is None
+
+
+def test_reads_service_key_previous_from_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("GENAI_SERVICE_KEY_PREVIOUS", "previous-service-key")
+
+    settings = Settings(_env_file=None)
+
+    assert settings.service_key_previous is not None
+    assert settings.service_key_previous.get_secret_value() == "previous-service-key"
+
+
+def test_generic_service_key_previous_env_is_ignored(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("GENAI_SERVICE_KEY_PREVIOUS", raising=False)
+    monkeypatch.setenv("SERVICE_KEY_PREVIOUS", "algo")
+
+    settings = Settings(_env_file=None)
+
+    assert settings.service_key_previous is None
+
+
+def test_service_key_previous_is_not_exposed_in_repr() -> None:
+    settings = Settings(_env_file=None, service_key_previous="super-secret-previous-key")
+
+    assert "super-secret-previous-key" not in repr(settings)
+    assert settings.service_key_previous is not None
+    assert settings.service_key_previous.get_secret_value() == "super-secret-previous-key"
