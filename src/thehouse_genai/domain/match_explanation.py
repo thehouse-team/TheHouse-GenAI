@@ -17,6 +17,13 @@ from typing import Final, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from thehouse_genai.domain.text_guard import (
+    escape_untrusted as _escape_text,
+)
+from thehouse_genai.domain.text_guard import (
+    is_control as _is_control,
+)
+
 _DEFAULT_CURRENCY: Final[str] = "MXN"
 _LOCALE: Final[str] = "es-MX"
 _MAX_SERVICE_CHARS: Final[int] = 40
@@ -68,13 +75,6 @@ _MODEL_CONFIG: Final[ConfigDict] = ConfigDict(
 )
 
 
-def _is_control(char: str) -> bool:
-    """Report whether a character is a C0 control or DEL."""
-
-    code = ord(char)
-    return code < 32 or code == 127
-
-
 def _validate_services(value: list[str]) -> list[str]:
     """Accept any service label except control characters and overlong names."""
 
@@ -84,21 +84,6 @@ def _validate_services(value: list[str]) -> list[str]:
         if any(_is_control(char) for char in service):
             raise ValueError("service names must not contain control characters")
     return value
-
-
-def _escape_text(value: str) -> str:
-    """Neutralize delimiters and control characters in untrusted free text.
-
-    Angle brackets become HTML entities so a value can never close the
-    `<untrusted_data>` block of the prompt. Backslashes are doubled first, so the
-    control-character escapes emitted below cannot be confused with input text.
-    """
-
-    escaped = value.replace("\\", "\\\\").replace("<", "&lt;").replace(">", "&gt;")
-    return "".join(
-        f"\\u{ord(char):04x}" if _is_control(char) else char
-        for char in escaped
-    )
 
 
 def _decimal_text(value: float) -> str:

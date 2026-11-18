@@ -237,3 +237,59 @@ def classify(text: str, *, lexicon: Lexicon | None = None) -> ModerationVerdict:
         reasons=tuple(sorted(reasons, key=lambda reason: reason.value)),
         categories=tuple(sorted(categories, key=lambda category: category.value)),
     )
+
+
+@dataclass(frozen=True)
+class RedactionResult:
+    """The text after PII removal, with only stable reason codes."""
+
+    text: str
+    reasons: tuple[ModerationReason, ...]
+
+
+# The redaction patterns are derived from the exact detector patterns above, so the
+# policy and the removal cannot drift apart. `re.IGNORECASE` is added because the
+# detectors fold case before matching while redaction works on the original text.
+_EMAIL_REDACT_PATTERN: Final[re.Pattern[str]] = re.compile(
+    _EMAIL_PATTERN.pattern, re.IGNORECASE
+)
+_PHONE_REDACT_PATTERN: Final[re.Pattern[str]] = re.compile(
+    _PHONE_PATTERN.pattern, re.IGNORECASE
+)
+
+
+def redact_pii(text: str) -> RedactionResult:
+    """Replace emails, phone numbers and URLs before untrusted text reaches a prompt.
+
+    Replacements are applied from the end of the string so earlier spans stay valid.
+    Overlapping matches are resolved in favor of the first one: a URL is replaced
+    before any email it may contain. Prices, distances and years are never matched.
+    """
+
+    spans: list[tuple[int, int, str, ModerationReason]] = []
+    for match in _URL_PATTERN.finditer(text):
+        core = match.group().rstrip(_URL_TRAILING)
+        if core:
+            spans.append((match.start(), match.start() + len(core), "[URL]", ModerationReason.URL))
+    for match in _EMAIL_REDACT_PATTERN.finditer(text):
+        spans.append((match.start(), match.end(), "[EMAIL]", ModerationReason.EMAIL))
+    for match in _PHONE_REDACT_PATTERN.finditer(text):
+        spans.append((match.start(), match.end(), "[TELEFONO]", ModerationReason.PHONE))
+
+    accepted: list[tuple[int, int, str, ModerationReason]] = []
+    last_end = -1
+    for start, end, replacement, reason in sorted(spans, key=lambda item: (item[0], item[1])):
+        if start < last_end:
+            continue
+        accepted.append((start, end, replacement, reason))
+        last_end = end
+
+    redacted = text
+    reasons: set[ModerationReason] = set()
+    for start, end, replacement, reason in reversed(accepted):
+        redacted = redacted[:start] + replacement + redacted[end:]
+        reasons.add(reason)
+    return RedactionResult(
+        text=redacted,
+        reasons=tuple(sorted(reasons, key=lambda reason: reason.value)),
+    )

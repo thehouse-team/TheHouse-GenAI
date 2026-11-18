@@ -13,13 +13,13 @@
 
 ## B1 — Dominio
 
-- [ ] Contratos `ParseSearchRequest`, `SearchFilters`, `ParseSearchResponse` y
+- [x] Contratos `ParseSearchRequest`, `SearchFilters`, `ParseSearchResponse` y
       `ParseSearchCompletion` con aliases, límites y `extra="forbid"`.
-- [ ] Extractores deterministas de dinero, distancia, universidad, servicios y mascotas.
-- [ ] `redact_pii` reutilizando los detectores de `domain/moderation.py`.
-- [ ] Guard de texto compartido en `domain/text_guard.py` con re-exports que mantienen
+- [x] Extractores deterministas de dinero, distancia, universidad, servicios y mascotas.
+- [x] `redact_pii` reutilizando los detectores de `domain/moderation.py`.
+- [x] Guard de texto compartido en `domain/text_guard.py` con re-exports que mantienen
       verdes los tests de 003 sin cambios.
-- [ ] Tests en `test_domain_search_filters.py` y `test_search_text_guard.py`.
+- [x] Tests en `test_domain_search_filters.py` y `test_search_text_guard.py`.
 
 ## B2 — Guardrails
 
