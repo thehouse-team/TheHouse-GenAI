@@ -12,6 +12,19 @@ de 004) y el alcance de mTLS, presupuesto global, CI y runbook. Aún no hay impl
 ni resultados de gates que reportar en esta spec: se registrarán bloque a bloque y no se
 marcará como completada hasta cumplir todos sus criterios.
 
+## Configuración de GitHub (D8)
+
+Activada en GitHub Settings el 2026-11-17. La evidencia son capturas guardadas fuera del
+repositorio; no se versionan secretos ni configuraciones de cuenta:
+
+- Secret scanning y push protection.
+- Dependabot: dependency alerts, malware alerts y security updates.
+- CodeQL default setup.
+
+En CI se añade `pip-audit` como paso no bloqueante (`continue-on-error: true`), instalado
+solo en el job. No se usa gitleaks y `pyproject.toml` no se modifica. Los gates
+bloqueantes siguen siendo `ruff check .`, `mypy src` y `pytest`.
+
 ## Evidencia requerida al cerrar
 
 - [ ] Threat model y data flow documentados (apéndice).

@@ -274,7 +274,7 @@ Plan aprobado el 2026-11-17. Decisiones D1–D12 registradas al activar la spec:
 | D5 | Inyección en datos de entrada: se escapa y se registra como metadato seguro, nunca se rechaza; no altera el contrato con Backend. |
 | D6 | Normalización de salida: NFKC + tabla de confusables (cirílico/griego comunes: а, е, о, р, с, і, у, х…) + eliminación de caracteres de ancho cero. NFKC por sí solo no convierte cirílico a latino. |
 | D7 | Runbook como apéndice de `specs/005-security/spec.md`; no se crea `docs/`. |
-| D8 | GitHub secret scanning + push protection y Dependabot los configura el usuario en Settings (documentado). CI añade `pip-audit` con `continue-on-error`; no se usa gitleaks ni se añaden dependencias a `pyproject.toml`. |
+| D8 | Secret scanning, push protection, Dependabot (alerts, malware alerts, security updates) y CodeQL default setup activados en Settings el 2026-11-17 (capturas fuera del repo). CI añade `pip-audit` con `continue-on-error`; no se usa gitleaks ni se añaden dependencias a `pyproject.toml`. |
 | D9 | Omitir HSTS y CSP en la aplicación; se deciden en despliegue (G09/G10). |
 | D10 | Si no hay clave actual, fallar cerrado aunque exista `GENAI_SERVICE_KEY_PREVIOUS`. |
 | D11 | Corpus de inyección versionado en `tests/fixtures/prompt_injection_corpus.json`. |

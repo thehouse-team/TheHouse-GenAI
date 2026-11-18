@@ -72,9 +72,10 @@ filtra, antes de consumir cuota del proveedor.
   de 60 peticiones / 60 s, 429 con sobre estándar y `Retry-After`. El presupuesto por
   llamada ya lo cubren `GuardedProvider` y `max_output_tokens`; un presupuesto global
   y el límite multi-instancia quedan documentados para G09/G10.
-- **RF-06:** GitHub secret scanning, push protection y Dependabot se configuran en
-  Settings (D8); `pip-audit` se ejecuta en CI con `continue-on-error`. Sin dependencias
-  nuevas en `pyproject.toml`.
+- **RF-06:** GitHub secret scanning, push protection, Dependabot (dependency alerts,
+  malware alerts y security updates) y CodeQL default setup se activaron en Settings el
+  2026-11-17 (D8; evidencia por capturas fuera del repo). `pip-audit` se ejecuta en CI
+  con `continue-on-error`. Sin dependencias nuevas en `pyproject.toml`.
 - **RF-07:** los intentos de inyección en la entrada se escapan y se registran como
   metadato seguro, sin rechazar la request (D5); la salida se normaliza con NFKC, tabla
   de confusables y eliminación de caracteres de ancho cero (D6).
@@ -125,7 +126,7 @@ filtra, antes de consumir cuota del proveedor.
 | D5 | Inyección en entrada: escape y log, sin rechazo. |
 | D6 | Salida: NFKC + tabla de confusables (cirílico y griego comunes: а, е, о, р, с, і, у, х…) + ancho cero. |
 | D7 | Runbook como apéndice de esta spec; sin `docs/`. |
-| D8 | GitHub secret scanning, push protection y Dependabot en Settings; `pip-audit` en CI con `continue-on-error`; sin gitleaks ni deps nuevas. |
+| D8 | Secret scanning, push protection, Dependabot (alerts, malware alerts, security updates) y CodeQL default setup activados en Settings el 2026-11-17 (capturas fuera del repo); `pip-audit` en CI con `continue-on-error`; sin gitleaks ni deps nuevas. |
 | D9 | Sin HSTS ni CSP en la app; decidir en despliegue. |
 | D10 | Fail closed si solo hay clave anterior. |
 | D11 | Corpus JSON versionado en `tests/fixtures/prompt_injection_corpus.json`. |
