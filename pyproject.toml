@@ -29,6 +29,7 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 thehouse_genai = ["py.typed"]
+"thehouse_genai.domain" = ["moderation_lexicon.json"]
 
 [tool.ruff]
 target-version = "py312"

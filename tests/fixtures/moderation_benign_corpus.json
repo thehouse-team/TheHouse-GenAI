@@ -1,0 +1,18 @@
+{
+  "version": "1.0",
+  "description": "Frases reales de rentas estudiantiles que nunca deben marcarse.",
+  "cases": [
+    {"id": "precio-mxn", "text": "Cuesta $2,800 MXN al mes."},
+    {"id": "presupuesto-mxn", "text": "El precio es de $3,000 MXN y está dentro de tu presupuesto."},
+    {"id": "distancia", "text": "Está a 1.3 km de la universidad."},
+    {"id": "coincidencia", "text": "Tiene una coincidencia del 91% con tus preferencias."},
+    {"id": "deposito", "text": "El depósito de garantía se devuelve al finalizar el contrato."},
+    {"id": "mascotas", "text": "Se aceptan mascotas en la habitación."},
+    {"id": "bano", "text": "La habitación cuenta con baño privado."},
+    {"id": "uttt", "text": "Es un cuarto cerca de la UTTT."},
+    {"id": "servicios", "text": "Incluye internet, agua y luz."},
+    {"id": "amueblada", "text": "Habitación amueblada con lavadora y estacionamiento."},
+    {"id": "distancia-maxima", "text": "La distancia máxima aceptada es de 2.0 km."},
+    {"id": "preferencias", "text": "Coincidencia del 91% con tus preferencias y $2,800 MXN."}
+  ]
+}
