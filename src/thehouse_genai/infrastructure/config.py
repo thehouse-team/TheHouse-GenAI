@@ -10,7 +10,7 @@ import json
 from functools import lru_cache
 from typing import Annotated, Any, Literal, Self
 
-from pydantic import Field, SecretStr, field_validator, model_validator
+from pydantic import AliasChoices, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
@@ -23,6 +23,9 @@ class Settings(BaseSettings):
     requires a credential and a model id; the factory still builds only the `fake`
     provider until its own block closes, so a `gemini` configuration fails fast
     instead of calling anything. Never log `genai_api_key`.
+
+    Since spec 003, `service_key` holds the service-to-service credential as a
+    `SecretStr`; it is never logged nor serialized.
     """
 
     model_config = SettingsConfigDict(
@@ -37,6 +40,14 @@ class Settings(BaseSettings):
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
     cors_origins: Annotated[list[str], NoDecode] = Field(default_factory=list)
     max_request_bytes: int = Field(default=65_536, ge=1_024, le=10_485_760)
+
+    # Service-to-service authentication for the generative endpoints (spec 003).
+    # The env var is GENAI_SERVICE_KEY; `service_key` stays available as an init kwarg.
+    # Never log `service_key`.
+    service_key: SecretStr | None = Field(
+        default=None,
+        validation_alias=AliasChoices("GENAI_SERVICE_KEY", "service_key"),
+    )
 
     # Provider configuration (spec 002, extended by spec 011). "gemini" is accepted
     # by the configuration and requires a credential and a model id; the factory
@@ -92,6 +103,23 @@ class Settings(BaseSettings):
         if not candidate:
             return None
         return candidate
+
+    @field_validator("service_key", mode="before")
+    @classmethod
+    def _normalize_service_key(cls, value: Any) -> Any:
+        """Treat a blank service key as unset instead of an empty secret."""
+
+        if value is None:
+            return None
+        if isinstance(value, SecretStr):
+            text = value.get_secret_value()
+        elif isinstance(value, str):
+            text = value
+        else:
+            return value
+        if not text.strip():
+            return None
+        return SecretStr(text)
 
     @model_validator(mode="after")
     def _require_gemini_credentials(self) -> Self:
