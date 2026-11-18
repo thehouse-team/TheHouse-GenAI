@@ -150,14 +150,23 @@ def test_url_detector_ignores_bare_domains(text: str) -> None:
     assert detect_url(text) is False
 
 
-def test_shipped_lexicon_has_empty_lists() -> None:
+def test_shipped_lexicon_is_well_formed() -> None:
     lexicon = load_lexicon()
 
     assert lexicon.version == "1.0"
-    assert lexicon.block == frozenset()
-    assert lexicon.review == frozenset()
-    assert lexicon.allowlist == frozenset()
+    assert lexicon.block, "the block list must not be empty"
+    assert lexicon.review, "the review list must not be empty"
 
+    all_terms = lexicon.block | lexicon.review | lexicon.allowlist
+    for term in all_terms:
+        assert term == term.strip().lower(), "terms must be lowercase and trimmed"
+        assert term.isascii(), "terms must be written without accents"
+        assert " " not in term, "terms must be single words"
+
+    assert not (lexicon.block & lexicon.review), "a term cannot be in block and review"
+    assert not ((lexicon.block | lexicon.review) & lexicon.allowlist), (
+        "a term cannot be in the allowlist and in block or review"
+    )
 
 @pytest.mark.parametrize("text", ["El zorbaflux aparece aqui.", "ZORBAFLUX", "zórbaflux"])
 def test_fictitious_block_term_blocks(
