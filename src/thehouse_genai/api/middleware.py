@@ -21,6 +21,7 @@ from thehouse_genai.application.metrics_port import (
     HttpMethod,
     MetricName,
     MetricsRecorder,
+    StatusClass,
     StatusCode,
 )
 
@@ -54,6 +55,18 @@ def _metric_status(status_code: int) -> StatusCode:
         return StatusCode(str(status_code))
     except ValueError:
         return StatusCode.OTHER
+
+
+def _metric_status_class(status_code: int) -> StatusClass:
+    """Group a status code into the closed latency series; 1xx/3xx become `other`."""
+
+    if 200 <= status_code < 300:
+        return StatusClass.SUCCESS
+    if 400 <= status_code < 500:
+        return StatusClass.CLIENT_ERROR
+    if 500 <= status_code < 600:
+        return StatusClass.SERVER_ERROR
+    return StatusClass.OTHER
 
 
 class SecurityHeadersMiddleware:
@@ -125,6 +138,7 @@ class RequestContextMiddleware:
                 duration_ms,
                 method=method,
                 path=path,
+                status_class=_metric_status_class(status_code),
             )
             logger.info(
                 "http.request.completed",

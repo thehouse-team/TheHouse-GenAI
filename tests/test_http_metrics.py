@@ -18,6 +18,7 @@ from thehouse_genai.application.metrics_port import (
     HttpMethod,
     MetricName,
     MetricsRecorder,
+    StatusClass,
     StatusCode,
 )
 from thehouse_genai.infrastructure.config import Settings
@@ -83,8 +84,13 @@ def _histogram(
     app: FastAPI,
     method: HttpMethod,
     path: EndpointPath,
+    status_class: StatusClass = StatusClass.SUCCESS,
 ) -> Any:
-    expected = {"method": method.value, "path": path.value}
+    expected = {
+        "method": method.value,
+        "path": path.value,
+        "status_class": status_class.value,
+    }
     for histogram in app.state.metrics.snapshot().histograms:
         if (
             histogram.name == MetricName.HTTP_REQUEST_DURATION_MS
@@ -232,3 +238,22 @@ def test_explain_match_contract_is_unchanged() -> None:
 
     assert response.status_code == 200
     assert set(response.json()) == {"explanation", "generated", "promptVersion"}
+
+
+def test_success_and_401_latencies_are_separate_series() -> None:
+    app = _app()
+
+    with TestClient(app) as client:
+        success = client.post(URL, json=_payload(), headers={"X-Service-Key": SERVICE_KEY})
+        rejected = client.post(URL, json=_payload())
+
+    assert success.status_code == 200
+    assert rejected.status_code == 401
+    ok = _histogram(app, HttpMethod.POST, EndpointPath.EXPLAIN_MATCH, StatusClass.SUCCESS)
+    client_error = _histogram(
+        app, HttpMethod.POST, EndpointPath.EXPLAIN_MATCH, StatusClass.CLIENT_ERROR
+    )
+    assert ok is not None and ok.count == 1
+    assert client_error is not None and client_error.count == 1
+    labels = [dict(item.labels) for item in app.state.metrics.snapshot().histograms]
+    assert {item["status_class"] for item in labels} == {"2xx", "4xx"}

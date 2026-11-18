@@ -80,6 +80,15 @@ class StatusCode(StrEnum):
     OTHER = "other"
 
 
+class StatusClass(StrEnum):
+    """Coarse status class for latency series; bounded and free of raw status codes."""
+
+    SUCCESS = "2xx"
+    CLIENT_ERROR = "4xx"
+    SERVER_ERROR = "5xx"
+    OTHER = "other"
+
+
 class CallOutcome(StrEnum):
     SUCCESS = "success"
     ERROR = "error"
@@ -268,6 +277,7 @@ __all__ = [
     "ModerationCategory",
     "ModerationDecision",
     "ProviderErrorCode",
+    "StatusClass",
     "StatusCode",
     "TokenDirection",
 ]

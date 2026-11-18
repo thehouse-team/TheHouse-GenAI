@@ -32,6 +32,7 @@ from thehouse_genai.application.metrics_port import (
     MetricsRecorder,
     MetricsSnapshot,
     ProviderErrorCode,
+    StatusClass,
     StatusCode,
     TokenDirection,
 )
@@ -71,6 +72,7 @@ _HISTOGRAM_LABELS: Final[dict[MetricName, _LabelSpec]] = {
     MetricName.HTTP_REQUEST_DURATION_MS: {
         "method": _values(HttpMethod),
         "path": _values(EndpointPath),
+        "status_class": _values(StatusClass),
     },
 }
 

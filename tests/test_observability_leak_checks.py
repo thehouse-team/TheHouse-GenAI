@@ -28,6 +28,7 @@ from thehouse_genai.application.metrics_port import (
     ModerationCategory,
     ModerationDecision,
     ProviderErrorCode,
+    StatusClass,
     StatusCode,
     TokenDirection,
 )
@@ -71,6 +72,7 @@ _ALLOWED_LABELS = {
     "method": {item.value for item in HttpMethod},
     "path": {item.value for item in EndpointPath},
     "status_code": {item.value for item in StatusCode},
+    "status_class": {item.value for item in StatusClass},
     "outcome": {item.value for item in CallOutcome},
     "code": {item.value for item in ProviderErrorCode},
     "direction": {item.value for item in TokenDirection},
@@ -276,6 +278,8 @@ def test_unknown_and_id_paths_are_grouped_as_other() -> None:
         item for item in snapshot["histograms"] if item["name"] == "http_request_duration_ms"
     ]
     assert {item["labels"]["path"] for item in histograms} == {"other"}
+    assert {item["labels"]["status_class"] for item in histograms} == {"4xx"}
+    assert len(histograms) == 1
 
 
 def test_provider_model_never_appears_in_metrics() -> None:

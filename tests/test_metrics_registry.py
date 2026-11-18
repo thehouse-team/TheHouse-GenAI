@@ -22,6 +22,7 @@ from thehouse_genai.application.metrics_port import (
     MetricName,
     MetricsRecorder,
     ProviderErrorCode,
+    StatusClass,
     StatusCode,
     TokenDirection,
 )
@@ -35,6 +36,7 @@ _REQUEST = {
 _LATENCY = {
     "method": HttpMethod.POST,
     "path": EndpointPath.EXPLAIN_MATCH,
+    "status_class": StatusClass.SUCCESS,
 }
 
 
@@ -229,6 +231,15 @@ def test_histogram_percentiles_with_known_data() -> None:
     assert histogram.mean_ms == 425.0
     assert histogram.p50_ms_approx == 175.0
     assert histogram.p95_ms_approx == 1700.0
+
+
+def test_histogram_labels_include_the_closed_status_class() -> None:
+    registry = MetricsRegistry()
+
+    registry.observe(MetricName.HTTP_REQUEST_DURATION_MS, 120, **_LATENCY)
+
+    histogram = registry.snapshot().histograms[0]
+    assert dict(histogram.labels)["status_class"] == "2xx"
 
 
 def test_single_observation_stays_inside_its_bucket() -> None:
