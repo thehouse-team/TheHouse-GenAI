@@ -98,7 +98,7 @@ def test_success_has_the_exact_response_shape() -> None:
     body = response.json()
     assert set(body) == {"explanation", "generated", "promptVersion"}
     assert body["generated"] is True
-    assert body["promptVersion"] == "explain_match_v1"
+    assert body["promptVersion"] == "explain_match_v2"
     assert body["explanation"] == "Coincidencia del 87% con tus preferencias."
 
 

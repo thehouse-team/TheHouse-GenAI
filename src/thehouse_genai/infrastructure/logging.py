@@ -67,3 +67,5 @@ def configure_logging(level: str = "INFO") -> None:
 
     # Requests are logged once by RequestContextMiddleware with structured fields.
     logging.getLogger("uvicorn.access").disabled = True
+    # The HTTP client emits one INFO line per call; keep only our controlled logs.
+    logging.getLogger("httpx").setLevel(logging.WARNING)
