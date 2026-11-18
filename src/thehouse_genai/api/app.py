@@ -20,6 +20,7 @@ from thehouse_genai.api.rate_limit import InMemoryRateLimiter
 from thehouse_genai.api.routes import generative, health
 from thehouse_genai.domain.moderation import MAX_TEXT_CHARS as MODERATION_MAX_TEXT_CHARS
 from thehouse_genai.domain.moderation import ModerationDecision
+from thehouse_genai.infrastructure.budget import DailyBudget
 from thehouse_genai.infrastructure.config import Settings, get_settings
 from thehouse_genai.infrastructure.logging import configure_logging
 from thehouse_genai.infrastructure.metrics import MetricsRegistry
@@ -73,6 +74,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.settings = resolved
     metrics = MetricsRegistry()
     app.state.metrics = metrics
+    budget = DailyBudget(
+        enabled=resolved.budget_enabled,
+        call_limit=resolved.daily_call_limit,
+        input_token_limit=resolved.daily_input_token_limit,
+        output_token_limit=resolved.daily_output_token_limit,
+        cost_input_per_million=resolved.cost_input_per_million,
+        cost_output_per_million=resolved.cost_output_per_million,
+    )
+    app.state.budget = budget
     app.state.rate_limiter = InMemoryRateLimiter(
         requests=resolved.rate_limit_requests,
         window_seconds=resolved.rate_limit_window_seconds,

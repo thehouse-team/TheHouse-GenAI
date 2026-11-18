@@ -151,6 +151,24 @@ class CounterSnapshot:
 
 
 @dataclass(frozen=True)
+class GaugeSnapshot:
+    """One string-valued gauge, used for exact ``Decimal`` cost values."""
+
+    name: str
+    labels: tuple[tuple[str, str], ...]
+    value: str
+
+    def to_dict(self) -> dict[str, object]:
+        """Return a fresh plain dict."""
+
+        return {
+            "name": self.name,
+            "labels": {key: value for key, value in self.labels},
+            "value": self.value,
+        }
+
+
+@dataclass(frozen=True)
 class HistogramSnapshot:
     """A fixed-bucket latency summary with approximate percentiles."""
 
@@ -188,6 +206,7 @@ class MetricsSnapshot:
     uptime_seconds: float
     counters: tuple[CounterSnapshot, ...]
     histograms: tuple[HistogramSnapshot, ...]
+    gauges: tuple[GaugeSnapshot, ...] = ()
 
     def to_dict(self) -> dict[str, object]:
         """Return a fresh plain dict; nested containers are copied too."""
@@ -198,6 +217,7 @@ class MetricsSnapshot:
             "uptime_seconds": self.uptime_seconds,
             "counters": [counter.to_dict() for counter in self.counters],
             "histograms": [histogram.to_dict() for histogram in self.histograms],
+            "gauges": [gauge.to_dict() for gauge in self.gauges],
         }
 
     def to_json(self) -> str:
@@ -220,6 +240,9 @@ class MetricsRecorder(Protocol):
     def observe(self, name: str, value_ms: float, **labels: str) -> None:
         """Add one latency observation to a histogram."""
 
+    def set_gauge(self, name: str, value: str) -> None:
+        """Set a string-valued gauge, e.g. an exact ``Decimal`` cost."""
+
     def snapshot(self) -> MetricsSnapshot:
         """Return an immutable view of all recorded values."""
 
@@ -234,6 +257,7 @@ __all__ = [
     "CounterSnapshot",
     "EndpointPath",
     "FallbackReason",
+    "GaugeSnapshot",
     "GeneratedFlag",
     "HistogramSnapshot",
     "HttpMethod",

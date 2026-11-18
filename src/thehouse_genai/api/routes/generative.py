@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, Request
 
 from thehouse_genai.api.auth import require_service_key
 from thehouse_genai.api.rate_limit import enforce_rate_limit
+from thehouse_genai.application.budget_port import DailyBudgetPort
 from thehouse_genai.application.explain_match import EXPLAIN_MATCH_PROMPT_VERSION, ExplainMatch
 from thehouse_genai.application.metrics_port import MetricsRecorder
 from thehouse_genai.domain.match_explanation import ExplainMatchRequest, ExplainMatchResponse
@@ -27,10 +28,12 @@ def _get_use_case(request: Request) -> ExplainMatch:
     provider: GenerativeAiProvider | None = request.app.state.provider
     moderator: ModerationProvider = request.app.state.moderation_provider
     metrics: MetricsRecorder = request.app.state.metrics
+    budget: DailyBudgetPort = request.app.state.budget
     return ExplainMatch(
         provider,
         moderator=moderator,
         metrics=metrics,
+        budget=budget,
         prompt_version=EXPLAIN_MATCH_PROMPT_VERSION,
     )
 

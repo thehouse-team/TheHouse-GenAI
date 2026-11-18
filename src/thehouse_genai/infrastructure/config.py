@@ -7,6 +7,7 @@ Invalid values raise a clear validation error at startup; secrets use `SecretStr
 from __future__ import annotations
 
 import json
+from decimal import Decimal
 from functools import lru_cache
 from typing import Annotated, Any, Literal, Self
 
@@ -66,6 +67,38 @@ class Settings(BaseSettings):
         ge=1,
         le=1_000_000,
         validation_alias="GENAI_RATE_LIMIT_MAX_CLIENTS",
+    )
+
+    # Daily provider budget (spec 007). Disabled by default: activation is a deployment
+    # decision of G10. Token limits of None mean "no limit"; rates are per million tokens.
+    budget_enabled: bool = Field(
+        default=False,
+        validation_alias="GENAI_BUDGET_ENABLED",
+    )
+    daily_call_limit: int = Field(
+        default=400,
+        ge=1,
+        validation_alias="GENAI_DAILY_CALL_LIMIT",
+    )
+    daily_input_token_limit: int | None = Field(
+        default=None,
+        ge=0,
+        validation_alias="GENAI_DAILY_INPUT_TOKEN_LIMIT",
+    )
+    daily_output_token_limit: int | None = Field(
+        default=None,
+        ge=0,
+        validation_alias="GENAI_DAILY_OUTPUT_TOKEN_LIMIT",
+    )
+    cost_input_per_million: Decimal = Field(
+        default=Decimal("0"),
+        ge=0,
+        validation_alias="GENAI_COST_INPUT_PER_MILLION",
+    )
+    cost_output_per_million: Decimal = Field(
+        default=Decimal("0"),
+        ge=0,
+        validation_alias="GENAI_COST_OUTPUT_PER_MILLION",
     )
 
     # Service-to-service authentication for the generative endpoints (spec 003,
@@ -157,6 +190,12 @@ class Settings(BaseSettings):
             "rate_limit_requests",
             "rate_limit_window_seconds",
             "rate_limit_max_clients",
+            "budget_enabled",
+            "daily_call_limit",
+            "daily_input_token_limit",
+            "daily_output_token_limit",
+            "cost_input_per_million",
+            "cost_output_per_million",
         ):
             aliases[field_name] = f"GENAI_{field_name.upper()}"
         for field_name, env_name in aliases.items():

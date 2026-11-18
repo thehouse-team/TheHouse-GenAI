@@ -16,6 +16,7 @@ from typing import Final
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from thehouse_genai.application.budget_port import DailyBudgetPort
 from thehouse_genai.application.metrics_port import (
     CallOutcome,
     FallbackReason,
@@ -305,6 +306,7 @@ class ExplainMatch:
         *,
         moderator: ModerationProvider | None = None,
         metrics: MetricsRecorder | None = None,
+        budget: DailyBudgetPort | None = None,
         prompt_version: str = EXPLAIN_MATCH_PROMPT_VERSION,
         max_words: int = MAX_WORDS,
         max_output_tokens: int = MAX_OUTPUT_TOKENS,
@@ -318,6 +320,7 @@ class ExplainMatch:
         self._provider = provider
         self._moderator = moderator
         self._metrics = metrics
+        self._budget = budget
         self._prompt_version = prompt_version
         self._max_words = max_words
         self._max_output_tokens = max_output_tokens
@@ -327,6 +330,10 @@ class ExplainMatch:
 
         if self._provider is None:
             return self._reject(request, "NO_PROVIDER")
+        if self._budget is not None and not self._budget.reserve_call():
+            if self._metrics is not None:
+                self._metrics.increment(MetricName.BUDGET_EXHAUSTIONS_TOTAL)
+            return self._reject(request, "BUDGET_EXHAUSTED")
 
         port_request = GenerativeAiRequest(
             prompt=_build_prompt(request),
@@ -385,19 +392,25 @@ class ExplainMatch:
     def _record_provider_success(self, usage: GenerativeAiUsage) -> None:
         """Record the single provider call and the usage reported by the vendor."""
 
-        if self._metrics is None:
-            return
-        self._metrics.increment(MetricName.PROVIDER_CALLS_TOTAL, outcome=CallOutcome.SUCCESS)
-        self._metrics.increment(
-            MetricName.PROVIDER_TOKENS_TOTAL,
-            amount=usage.input_tokens,
-            direction=TokenDirection.INPUT,
-        )
-        self._metrics.increment(
-            MetricName.PROVIDER_TOKENS_TOTAL,
-            amount=usage.output_tokens,
-            direction=TokenDirection.OUTPUT,
-        )
+        if self._metrics is not None:
+            self._metrics.increment(MetricName.PROVIDER_CALLS_TOTAL, outcome=CallOutcome.SUCCESS)
+            self._metrics.increment(
+                MetricName.PROVIDER_TOKENS_TOTAL,
+                amount=usage.input_tokens,
+                direction=TokenDirection.INPUT,
+            )
+            self._metrics.increment(
+                MetricName.PROVIDER_TOKENS_TOTAL,
+                amount=usage.output_tokens,
+                direction=TokenDirection.OUTPUT,
+            )
+        if self._budget is not None:
+            self._budget.record_tokens(usage.input_tokens, usage.output_tokens)
+            if self._metrics is not None:
+                self._metrics.set_gauge(
+                    MetricName.PROVIDER_ESTIMATED_COST,
+                    self._budget.snapshot().estimated_cost,
+                )
 
     def _record_provider_error(self, error: ProviderError) -> None:
         """Record a failed call with its stable taxonomy code."""
