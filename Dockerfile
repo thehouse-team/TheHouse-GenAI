@@ -4,7 +4,7 @@
 # Source: https://hub.docker.com/v2/repositories/library/python/tags/3.12-slim
 # Consulted and user-verified 2026-11-18; media_type=application/vnd.oci.image.index.v1+json.
 # Per-architecture digests from the tag's "images" array are deliberately not used.
-FROM python:3.12-slim@sha256:5e2bdb1b0d542d5039cffb8181c65930093949194a65c365dfb1b0fe13a4fa5b AS builder
+FROM python:3.15-slim@sha256:65a65fc7b30b06cb6df4930fd4650697cb23f4c2698ab81fc87e4b031bc36928 AS builder
 
 ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
     PIP_NO_CACHE_DIR=1 \
@@ -21,7 +21,7 @@ COPY requirements.lock ./
 # installed: its source tree is copied read-only into the runtime stage.
 RUN /opt/venv/bin/pip install --no-cache-dir --require-hashes -r requirements.lock
 
-FROM python:3.12-slim@sha256:5e2bdb1b0d542d5039cffb8181c65930093949194a65c365dfb1b0fe13a4fa5b AS runtime
+FROM python:3.15-slim@sha256:65a65fc7b30b06cb6df4930fd4650697cb23f4c2698ab81fc87e4b031bc36928 AS runtime
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
