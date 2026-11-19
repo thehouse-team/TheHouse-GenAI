@@ -14,7 +14,7 @@
 - [ ] CI actual en verde y bloqueante.
 - [ ] Imagen construida y probada en CI, sin asumir Docker local.
 - [ ] Digest de la imagen base verificado y registrado con fuente y fecha.
-- [ ] `.dockerignore` por whitelist y lock con hashes sin dependencias nuevas.
+- [x] `.dockerignore` por whitelist y lock con hashes sin dependencias nuevas.
 - [ ] PR construye y escanea sin publicar; `main` publica por SHA y digest con SBOM.
 - [ ] Acciones fijadas por SHA de release oficial, sin valores de memoria.
 - [ ] OIDC con rol personalizado de alcance único y sin `listSecrets`.

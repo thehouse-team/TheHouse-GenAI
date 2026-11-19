@@ -17,12 +17,12 @@
 
 ## B1 — Contexto y lock (sin commit)
 
-- [ ] `.dockerignore` por whitelist: solo `src/`, `pyproject.toml`, `requirements.lock` y
+- [x] `.dockerignore` por whitelist: solo `src/`, `pyproject.toml`, `requirements.lock` y
       `README.md`.
-- [ ] `requirements.lock` con hashes, generado con pip-tools transitorio, sin tocar
+- [x] `requirements.lock` con hashes, generado con pip-tools transitorio, sin tocar
       `pyproject.toml`.
-- [ ] Test de deriva entre las dependencias de ejecución de `pyproject.toml` y el lock.
-- [ ] Gates en verde; mostrar salida real; no hacer commit ni avanzar a B2.
+- [x] Test de deriva entre las dependencias de ejecución de `pyproject.toml` y el lock.
+- [x] Gates en verde; salida real registrada en `evidence.md`; sin commit y sin avanzar a B2.
 
 ## B2 — Imagen
 
