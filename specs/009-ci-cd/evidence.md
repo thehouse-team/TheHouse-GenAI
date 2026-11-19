@@ -158,9 +158,48 @@ $ .venv\Scripts\python.exe -m pytest
 1029 passed, 1 warning in 8.52s
 ```
 
+## Bloque B2 — Dockerfile (sin commit, según instrucción)
+
+Digest del índice multi-arquitectura de `python:3.12-slim` verificado en Docker Hub el
+2026-11-18 y mostrado al usuario antes de escribir el archivo:
+`sha256:5e2bdb1b0d542d5039cffb8181c65930093949194a65c365dfb1b0fe13a4fa5b`.
+El campo `media_type` del tag es `application/vnd.oci.image.index.v1+json`; los digests
+por arquitectura del array `images` no se usan.
+
+Contenido final del `Dockerfile` (tras los ajustes de seguridad del usuario): dos etapas
+(`builder`, `runtime`) sobre el mismo digest; el builder solo crea el venv en `/opt/venv`
+e instala `requirements.lock` con `--require-hashes` (sin `pip install .`, sin setuptools
+sin hash); el runtime copia `/opt/venv` desde el builder y `src` a `/app/src`, con
+`PYTHONPATH=/app/src`. No hay `chown` ni `chmod`: todo lo copiado queda con dueño root y
+modos por defecto 0644/0755, sin escritura para el usuario `10001`. Etapa runtime con
+`USER 10001:10001`, `PYTHONDONTWRITEBYTECODE=1`, `PYTHONUNBUFFERED=1`, `EXPOSE 8000`, sin
+`HEALTHCHECK` y `CMD` de uvicorn con `--no-server-header` y `--workers 1`.
+
+Tests de texto añadidos (18 en `tests/test_deployment_artifacts.py`): digest de 64 hex en
+todos los `FROM`, multi-etapa, usuario no root, ausencia de chown/chmod hacia 10001,
+`PYTHONPATH=/app/src`, `--require-hashes`, ausencia de `pip install .` y de setuptools,
+`--no-server-header`, `--workers 1`, ausencia de COPY de `.env`/tests/specs/scripts,
+ausencia de ARG/ENV con nombres de secretos, ausencia de HEALTHCHECK y presencia de
+`EXPOSE 8000` y de los flags de Python.
+No se ha construido la imagen: no hay Docker local; la construcción real se valida en B3.
+
 ## Bloques B2–B8
 
-- [ ] Digest de `python:3.12-slim` con fecha y URL de la fuente oficial (B2).
+- [x] Digest de `python:3.12-slim` con fecha y URL de la fuente oficial (B2):
+  `sha256:5e2bdb1b0d542d5039cffb8181c65930093949194a65c365dfb1b0fe13a4fa5b`, obtenido
+  el 2026-11-18 de `https://hub.docker.com/v2/repositories/library/python/tags/3.12-slim`
+  (`media_type: application/vnd.oci.image.index.v1+json`, es decir índice multi-arquitectura;
+  `last_updated` de la fuente `2026-11-08T05:06:56Z`).
+  **Verificado manualmente por el usuario el 2026-11-18** contra esa misma URL: el campo
+  `digest` de nivel principal coincide exactamente con el del `Dockerfile`.
+- [x] Verificación previa al cambio de B2: no existe uso de `importlib.metadata`,
+  `importlib.resources`, `pkg_resources` ni `get_distribution` en `src/`; la versión es la
+  constante `__version__` de `thehouse_genai/__init__.py`. El archivo de datos de
+  moderación se resuelve desde el árbol `src/` mediante `Path(__file__).with_name(...)`,
+  por lo que funciona con `PYTHONPATH=/app/src`. No se abrió ni citó su contenido.
+  Nada depende de que el paquete esté instalado.
+- [ ] Se muestran solo los tests de texto del Dockerfile; la construcción real se valida
+  en CI en B3.
 - [ ] SHA de cada acción con fecha y URL de su release oficial (B3).
 - [ ] Salidas de build, escaneo y SBOM en PR y en `main` (B3/B4).
 - [ ] Digest publicado en GHCR y revisión de ACA creada (B4/B5).

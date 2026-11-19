@@ -26,10 +26,11 @@
 
 ## B2 — Imagen
 
-- [ ] `Dockerfile` multi-stage con `python:3.12-slim` fijado por digest verificado.
-- [ ] Usuario no root, sin secretos, solo `src/` y lo necesario, `--no-server-header`.
-- [ ] Sin `HEALTHCHECK` y con `EXPOSE 8000`.
-- [ ] Tests de texto del Dockerfile y del `.dockerignore`.
+- [x] `Dockerfile` multi-stage con `python:3.12-slim` fijado por digest verificado.
+- [x] Usuario no root, sin secretos, solo `src/` y lo necesario, `--no-server-header`.
+- [x] Sin `HEALTHCHECK` y con `EXPOSE 8000`.
+- [x] Tests de texto del Dockerfile y del `.dockerignore`.
+- [ ] Sin commit y sin avanzar a B3 (según instrucción).
 
 ## B3 — CI de imagen
 

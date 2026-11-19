@@ -164,3 +164,91 @@ def test_dev_only_packages_are_split_between_locks() -> None:
     for name in _DEV_ONLY:
         assert name in development, f"{name} missing from requirements-dev.lock"
         assert name not in runtime, f"{name} leaked into requirements.lock"
+
+
+# --- Text checks for the Dockerfile (B2) ------------------------------------------
+
+
+def _dockerfile() -> str:
+    return DOCKERFILE.read_text(encoding="utf-8")
+
+
+def test_every_from_is_pinned_to_a_64_hex_digest() -> None:
+    from_lines = [line for line in _dockerfile().splitlines() if line.startswith("FROM ")]
+    assert len(from_lines) >= 2, "Dockerfile must have at least two stages"
+    for line in from_lines:
+        assert "python:3.12-slim@sha256:" in line, line
+        assert re.search(r"@sha256:[0-9a-f]{64}\b", line) is not None, line
+
+
+def test_dockerfile_is_multistage_and_copies_only_venv_and_src() -> None:
+    text = _dockerfile()
+    assert re.search(r"^FROM\s+.*\sAS\s+builder\s*$", text, re.MULTILINE) is not None
+    assert re.search(r"^FROM\s+.*\sAS\s+runtime\s*$", text, re.MULTILINE) is not None
+    assert "COPY --from=builder /opt/venv /opt/venv" in text
+    assert "COPY src /app/src" in text
+    assert "PYTHONPATH=/app/src" in text
+
+
+def test_dockerfile_runs_as_non_root_user() -> None:
+    text = _dockerfile()
+    assert "USER 10001:10001" in text
+    assert "USER root" not in text
+
+
+def test_dockerfile_never_chowns_or_chmods_to_the_app_user() -> None:
+    for line in _dockerfile().splitlines():
+        if line.startswith(("COPY", "RUN")):
+            assert "chown" not in line, line
+            assert "chmod" not in line, line
+    assert "--chown=10001" not in _dockerfile()
+
+
+def test_dockerfile_installs_from_the_hash_pinned_lock_only() -> None:
+    text = _dockerfile()
+    assert "--require-hashes -r requirements.lock" in text
+    assert "pip install ." not in text
+    assert re.search(r"pip install[^\n]*\s\.\s*$", text, re.MULTILINE) is None
+    assert "setuptools" not in text.lower()
+
+
+def test_uvicorn_suppresses_the_server_header_and_uses_one_worker() -> None:
+    text = _dockerfile()
+    assert "--no-server-header" in text
+    assert '"--workers", "1"' in text
+
+
+def test_dockerfile_never_copies_forbidden_paths() -> None:
+    for line in _dockerfile().splitlines():
+        if line.startswith("COPY") and "--from=" not in line:
+            lowered = line.lower()
+            for forbidden in (".env", "tests", "specs", "scripts"):
+                assert forbidden not in lowered, line
+
+
+def test_dockerfile_has_no_secret_arg_or_env() -> None:
+    secret_names = (
+        "API_KEY",
+        "SERVICE_KEY",
+        "METRICS_KEY",
+        "SECRET",
+        "TOKEN",
+        "PASSWORD",
+        "CREDENTIAL",
+    )
+    for line in _dockerfile().splitlines():
+        if line.startswith(("ARG ", "ENV ")):
+            for name in secret_names:
+                assert name not in line, line
+
+
+def test_dockerfile_has_no_healthcheck_and_exposes_port_8000() -> None:
+    text = _dockerfile()
+    assert "HEALTHCHECK" not in text
+    assert "EXPOSE 8000" in text
+
+
+def test_dockerfile_sets_python_runtime_flags() -> None:
+    text = _dockerfile()
+    assert "PYTHONDONTWRITEBYTECODE=1" in text
+    assert "PYTHONUNBUFFERED=1" in text
