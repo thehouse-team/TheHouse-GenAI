@@ -36,7 +36,7 @@ def test_pip_audit_step_is_present_and_non_blocking() -> None:
 
     assert len(audit_steps) == 1
     assert "continue-on-error: true" in audit_steps[0]
-    assert "pip install pip-audit" in audit_steps[0]
+    assert 'pip install "pip-audit==2.10.1"' in audit_steps[0]
 
 
 @pytest.mark.parametrize("gate", ["Ruff", "Mypy", "Pytest"])
