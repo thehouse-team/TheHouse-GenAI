@@ -280,6 +280,11 @@ entre ambos locks, con un test adicional que exige los marcadores de `uvloop` y
 extras, así que `uvicorn` aparece sin `[standard]` y el test ya no exige el extra en la
 línea del pin).
 
+Hecho registrado el 2026-11-19: los bloques B0–B3 de esta spec entraron a `main` en el PR
+#9 de forma anticipada, mediante un merge de un compañero sobre un borrador. La spec 009
+sigue **ACTIVE**; G10 continúa en la rama `feature/deployment-cd`, creada desde `main`
+actualizado.
+
 ## Primera ejecución real del job `image` (PR #9, run 44464597319)
 
 Doble verificación: el **estado de cada step** se obtuvo de la API pública de GitHub
@@ -341,6 +346,39 @@ mismo digest `sha256:5e2bdb1b0d542d5039cffb8181c65930093949194a65c365dfb1b0fe13a
 con `last_updated` `2026-11-08T05:06:56Z`; no hay digest más reciente que ya incluya el
 paquete corregido, por lo que se aplica el paso 2. El parche lleva un comentario para
 retirarlo cuando el digest base lo incluya (Dependabot propondrá el nuevo digest).
+
+## Bloque B4 — Publicación en GHCR (sin commit, según instrucción)
+
+Acciones nuevas fijadas por SHA verificado en la API oficial de GitHub (tag dereferenciado;
+ningún valor escrito de memoria):
+
+| Acción | Versión | SHA | URL de la release |
+| --- | --- | --- | --- |
+| `actions/attest-build-provenance` | v4.2.2 | `4d101475d8b20a2381f78447822ac1eab6504dd8` | https://github.com/actions/attest-build-provenance/releases/tag/v4.2.2 |
+| `actions/attest` | v4.2.2 | `1e69f48acb82d1966a394da916b4c1698aa569d6` | https://github.com/actions/attest/releases/tag/v4.2.2 |
+| `actions/download-artifact` | v8.0.2 | `9000827ccba6bdab643e8b6fd33ac0654aef8333` | https://github.com/actions/download-artifact/releases/tag/v8.0.2 |
+
+`actions/attest-sbom` no se usa: su propio `action.yml` en v4.1.0 emite el aviso
+`actions/attest-sbom has been deprecated, please use actions/attest instead`. El SBOM se
+atesta con `actions/attest` mediante `sbom-path`.
+
+Garantía de que se publica la imagen probada: el job `image` construye **una sola vez**
+con `build-push-action` (`push: false`, `load: true`, tag local `thehouse-genai:ci`); el
+smoke y Trivy se ejecutan contra **ese mismo tag local**. Si todo pasa y el evento es
+`push` a `main`, ese step hace `docker save thehouse-genai:ci -o image.tar` y lo sube como
+artifact `genai-image`. El job `publish` no vuelve a construir: descarga ese artifact,
+hace `docker load -i image.tar`, y solo aplica `docker tag` + `docker push` con el tag
+inmutable `sha-<SHA completo>`. El `docker push` devuelve el digest, que se usa como
+`subject-digest` de ambas attestation y se escribe en el resumen del job. No hay
+`build-push-action` en el job `publish`.
+
+Permisos del job `publish`: `contents: read`, `packages: write`, `id-token: write`,
+`attestations: write`. Login en `ghcr.io` con `${{ github.token }}` mediante
+`--password-stdin`; el workflow no contiene la cadena `secrets.` ni `:latest`.
+
+Mejora del smoke aplicada: cada verificación emite su propia línea `OK ...` (payload,
+sin `Server`, uid 10001, `/docs`, `/openapi.json`, y escritura denegada en `/app/src` y
+`/opt/venv`), seguida de `container smoke passed`.
 
 ## Bloques B2–B8
 

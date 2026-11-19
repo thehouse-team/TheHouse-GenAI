@@ -55,6 +55,11 @@ real con `gemini-3.5-flash-lite` cerró en 29/30 exactos tras reintentos; el dia
 ps-03 reveló el bug del parser estricto, corregido sin relajar la validación. `maxBudget`
 y `maxDistanceKm` se serializan como números JSON porque el contrato con Backend manda.
 
+Hecho registrado el 2026-11-19: los bloques B0–B3 de la spec 009 entraron a `main` en el
+PR #9 de forma anticipada, por un merge de un compañero sobre un borrador. La spec 009
+sigue **ACTIVE** y G10 continúa en la rama `feature/deployment-cd`, creada desde `main`
+actualizado.
+
 `009-ci-cd` (G10) está **ACTIVE** desde el 2026-11-18 sobre la rama `feature/deployment`,
 con plan aprobado por el usuario y la enmienda 1.2 ratificada. Su objetivo es publicar la
 imagen del servicio en GHCR y desplegarla por digest en la Container App

@@ -50,7 +50,12 @@
 
 ## B4 — Publicación y CD
 
-- [ ] Job `publish`: tag `sha-<SHA>`, digest en outputs, procedencia y SBOM.
+- [x] Job `publish`: solo en `main`, tag `sha-<SHA>`, digest en outputs y resumen.
+- [x] Attestation de procedencia y de SBOM ligadas al digest, con acciones oficiales
+      fijadas por SHA verificado.
+- [x] La imagen publicada es exactamente la que pasó smoke y escaneo (`docker save`/`load`).
+- [x] Runbook: el paquete GHCR debe ser público y cómo verificarlo.
+- [x] Mejora del smoke: línea `OK ...` por cada verificación.
 - [ ] Job `deploy` en `production` con OIDC y aprobación requerida.
 - [ ] Rol personalizado con alcance solo sobre `ca-thehouse-genai-u2` (D14).
 - [ ] Bicep de la Container App y del rol; aplicación manual por el usuario.
