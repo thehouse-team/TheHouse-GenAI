@@ -376,6 +376,11 @@ Permisos del job `publish`: `contents: read`, `packages: write`, `id-token: writ
 `attestations: write`. Login en `ghcr.io` con `${{ github.token }}` mediante
 `--password-stdin`; el workflow no contiene la cadena `secrets.` ni `:latest`.
 
+Tras el primer publish real se añadió `create-storage-record: false` a ambos pasos de
+attestation: emitían el aviso `Failed to create storage record / artifact-metadata:write`.
+No necesitamos esos metadatos, así que se deshabilita (mínimo privilegio). El test de
+texto comprueba que aparece exactamente dos veces.
+
 Mejora del smoke aplicada: cada verificación emite su propia línea `OK ...` (payload,
 sin `Server`, uid 10001, `/docs`, `/openapi.json`, y escritura denegada en `/app/src` y
 `/opt/venv`), seguida de `container smoke passed`.
@@ -418,7 +423,17 @@ Run actions/attest@1e69f48... with:
 Error: One of subject-path, subject-digest, or subject-checksums must be provided
 ```
 
-Digest publicado en ese run:
+**Publish completo posterior (run CI #29):** imagen publicada con procedencia y SBOM
+firmados (Sigstore/Rekor) y paquete GHCR público. Digest de la **imagen** a desplegar:
+
+```text
+ghcr.io/thehouse-team/thehouse-genai@sha256:8b5d250ce96cd338cab3ec2c0547e8c34704c1ec13c711ed019038d79e2b9edf
+```
+
+No confundir con `sha256:05659904...`, que es el digest de la **attestation**, no de la
+imagen. El despliegue usará el digest de la imagen.
+
+Digest publicado en el run #27 (no se usará para desplegar):
 `sha256:782fd3afce2aadddf66b273158f5abf73600bc612641dddad23ed56dd9a1f5b0`.
 Estado: publicado con procedencia, **sin attestation de SBOM**. Causa: el paso
 `Attest SBOM` pasaba el digest dentro de `subject-name` (`...genai@sha256:...`) y no
@@ -434,6 +449,28 @@ Nuevo test de texto: ambos pasos de attestation declaran `subject-digest` y ning
 
 **Este digest no se usará para desplegar.** El despliegue (B5) utilizará el digest del
 próximo publish en el que ambas attestations terminen en verde.
+
+## Bloque B5 — Infraestructura (ajustes previos al commit)
+
+Versiones de API verificadas en la referencia oficial de Microsoft Learn (ambas
+existen y son estables, no preview): `Microsoft.App/containerApps@2025-01-01` y
+`Microsoft.App/managedEnvironments@2025-01-01`. Fuentes:
+`https://learn.microsoft.com/en-us/azure/templates/microsoft.app/2025-01-01/containerapps`
+y `https://learn.microsoft.com/en-us/azure/templates/microsoft.app/2025-01-01/managedenvironments`.
+No fue necesario cambiar las versiones del Bicep.
+
+Decisiones documentadas en el runbook (Apéndice B de `spec.md`):
+
+- **Rollback coherente con `activeRevisionsMode: Single`:** no se reactiva una revisión
+  anterior; se redespliega el último digest bueno, creando una revisión nueva. B6 seguirá
+  este enfoque. El historial de digests desplegados se registra en este `evidence.md` y en
+  el resumen del job `publish`. Consulta del digest en ejecución:
+  `az containerapp show --name ca-thehouse-genai-u2 --resource-group rg-thehouse-u2 --query properties.template.containers[0].image -o tsv`.
+- **Reaplicación del Bicep:** siempre consultar primero ese digest y pasarlo a
+  `--parameters imageDigest=...`; si se aplica otro digest se revierte la imagen sin aviso.
+- **`GENAI_API_KEY` de producción:** debe venir de un proyecto de AI Studio separado
+  (p. ej. `thehouse-genai-prod`), porque las cuotas de Gemini son por proyecto y no deben
+  compartirse con el desarrollo local ni los smoke manuales.
 
 ## Bloques B2–B8
 

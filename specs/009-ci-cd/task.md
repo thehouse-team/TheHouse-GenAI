@@ -71,7 +71,8 @@
 
 - [ ] Gating por estado de revisión, réplicas y probes.
 - [ ] Verificación controlada con `exec` dentro de GenAI contra `localhost:8000`.
-- [ ] Job y runbook de rollback por revisión anterior, con prueba registrada.
+- [ ] Job y runbook de rollback redesplegando el último digest bueno (no reactivar una
+      revisión: `activeRevisionsMode` es `Single`), con prueba registrada.
 
 ## B7 — Borde HTTP
 

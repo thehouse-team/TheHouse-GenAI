@@ -74,6 +74,22 @@ jobs:
           uv pip compile pyproject.toml --universal --generate-hashes --python-version 3.12 --extra dev -o requirements-dev.lock
           git diff --exit-code -- requirements.lock requirements-dev.lock
 
+  infra:
+    name: Bicep validation
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Lint and build Bicep (no credentials needed)
+        run: |
+          set -euo pipefail
+          az bicep version >/dev/null 2>&1 || az bicep install
+          az bicep lint --file infra/genai.bicep
+          az bicep build --file infra/genai.bicep --stdout > /dev/null
+
   image:
     name: Image build, smoke and scan
     needs: quality
@@ -249,6 +265,7 @@ jobs:
           subject-name: ghcr.io/thehouse-team/thehouse-genai
           subject-digest: ${{ steps.push.outputs.digest }}
           push-to-registry: true
+          create-storage-record: false
 
       - name: Attest SBOM
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
@@ -257,3 +274,4 @@ jobs:
           subject-digest: ${{ steps.push.outputs.digest }}
           sbom-path: sbom.spdx.json
           push-to-registry: true
+          create-storage-record: false
