@@ -280,6 +280,68 @@ entre ambos locks, con un test adicional que exige los marcadores de `uvloop` y
 extras, así que `uvicorn` aparece sin `[standard]` y el test ya no exige el extra en la
 línea del pin).
 
+## Primera ejecución real del job `image` (PR #9, run 44464597319)
+
+Doble verificación: el **estado de cada step** se obtuvo de la API pública de GitHub
+(`GET /repos/thehouse-team/TheHouse-GenAI/actions/jobs/135359463269`), y el **detalle del
+smoke** de los logs reales copiados por el usuario. Los logs crudos no fueron descargables
+desde esta sesión (la API responde `403 Must have admin rights to Repository` y la página
+pública pide inicio de sesión), por lo que el detalle se registra tal cual fue facilitado:
+
+Estados de los steps (API pública):
+
+```text
+4 | Build image without publishing | status=completed | conclusion=success | 05:22:20Z -> 05:22:39Z
+5 | Container smoke               | status=completed | conclusion=success | 05:22:39Z -> 05:22:40Z
+6 | Stop smoke container          | status=completed | conclusion=success | 05:22:40Z -> 05:22:41Z
+7 | Vulnerability scan            | status=completed | conclusion=failure | 05:22:41Z -> 05:22:53Z
+8 | Generate SBOM                 | status=completed | conclusion=skipped
+9 | Upload SBOM                   | status=completed | conclusion=skipped
+```
+
+Por tanto el smoke **se ejecutó y pasó** (`success`, no `skipped`), y la limpieza del
+contenedor también. Lo que falló fue únicamente el escaneo; al fallar ese step, SBOM y su
+upload quedaron `skipped` y se ejecutarán cuando el escaneo pase. Los jobs `Quality gates`
+y `Lockfile drift` de esa misma ejecución terminaron en `success`, confirmando la
+corrección de los locks universales.
+
+Detalle real del paso `Container smoke` (logs copiados por el usuario):
+
+```text
+Run set -euo pipefail
+3ac531a98f726e0f91cba04aa76007adf712a19126d96fa3609bbad3b43a08c7
+container smoke passed
+```
+
+`3ac531a98f726…` es el id del contenedor devuelto por `docker run -d`, y la última línea
+es el `echo` propio del step. El script se ejecuta con `set -euo pipefail`, por lo que
+cualquier comprobación fallida (payload de `/health/ready`, ausencia de header `Server`,
+`id -u` distinto de `10001`, `/docs` o `/openapi.json` que no den `404`, o escritura
+permitida en `/app/src` o `/opt/venv`) habría terminado el step antes de imprimir
+`container smoke passed`. Junto con `conclusion=success` de la API, confirma que todas las
+verificaciones del smoke se ejecutaron y pasaron, y no fueron saltadas.
+
+Resultado del escaneo Trivy (reportado por el usuario):
+
+```text
+zlib1g  CVE-2026-85091  HIGH  fixed
+  instalada: 1:1.3.dfsg+really1.3.1-1+b1
+  corregida: 1:1.3.dfsg+really1.3.1-1+deb13u1
+  desbordamiento de buffer de montón en gz_vacate
+Todas las dependencias de Python: 0 vulnerabilidades
+```
+
+Decisión: **no añadir nada a `.trivyignore`**. Existe parche disponible, así que se aplica
+el paquete corregido en la etapa runtime con versión exacta (ver `Dockerfile`). No se
+acepta una excepción para una vulnerabilidad corregible.
+
+Comprobación previa al parche (2026-11-18): `GET
+https://hub.docker.com/v2/repositories/library/python/tags/3.12-slim` sigue devolviendo el
+mismo digest `sha256:5e2bdb1b0d542d5039cffb8181c65930093949194a65c365dfb1b0fe13a4fa5b`
+con `last_updated` `2026-11-08T05:06:56Z`; no hay digest más reciente que ya incluya el
+paquete corregido, por lo que se aplica el paso 2. El parche lleva un comentario para
+retirarlo cuando el digest base lo incluya (Dependabot propondrá el nuevo digest).
+
 ## Bloques B2–B8
 
 - [x] Digest de `python:3.12-slim` con fecha y URL de la fuente oficial (B2):

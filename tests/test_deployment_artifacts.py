@@ -272,3 +272,17 @@ def test_dockerfile_sets_python_runtime_flags() -> None:
     text = _dockerfile()
     assert "PYTHONDONTWRITEBYTECODE=1" in text
     assert "PYTHONUNBUFFERED=1" in text
+
+
+def test_apt_packages_are_version_pinned_and_cache_cleaned() -> None:
+    text = _dockerfile()
+    if "apt-get" not in text:
+        return
+    assert "--no-install-recommends" in text
+    assert "rm -rf /var/lib/apt/lists/*" in text
+    block = text.split("apt-get install", 1)[1].split("\n\n", 1)[0]
+    packages = re.findall(r"(?m)^\s+([a-z][a-z0-9+:.=~\-]*)\s*\\?\s*$", block)
+    assert packages, "no apt packages found in the install block"
+    for package in packages:
+        assert "=" in package, f"apt package {package} is not version-pinned"
+    assert any(package.startswith("zlib1g=") for package in packages)
