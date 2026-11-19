@@ -116,33 +116,46 @@ jobs:
             docker logs genai-smoke
             exit 1
           fi
+          echo "OK readiness responded after ${ready}s"
           body="$(curl -fsS http://127.0.0.1:18000/health/ready)"
           if [ "$body" != '{"status":"ok","service":"thehouse-genai","version":"0.1.0"}' ]; then
             echo "unexpected readiness payload: $body"
             exit 1
           fi
+          echo "OK readiness payload exact"
           if curl -fsS -D - -o /dev/null http://127.0.0.1:18000/health/ready | grep -qi '^server:'; then
             echo "Server header must not be present"
             exit 1
           fi
+          echo "OK no Server header"
           uid="$(docker exec genai-smoke id -u)"
           if [ "$uid" != "10001" ]; then
             echo "unexpected uid: $uid"
             exit 1
           fi
-          for path in /docs /openapi.json; do
-            code="$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:18000${path}")"
-            if [ "$code" != "404" ]; then
-              echo "${path} must return 404, got ${code}"
-              exit 1
-            fi
-          done
-          for path in /app/src /opt/venv; do
-            if docker exec genai-smoke sh -c "echo probe > ${path}/write-probe" 2>/dev/null; then
-              echo "app must not be able to write to ${path}"
-              exit 1
-            fi
-          done
+          echo "OK uid 10001"
+          code="$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:18000/docs)"
+          if [ "$code" != "404" ]; then
+            echo "/docs must return 404, got ${code}"
+            exit 1
+          fi
+          echo "OK /docs returns 404"
+          code="$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:18000/openapi.json)"
+          if [ "$code" != "404" ]; then
+            echo "/openapi.json must return 404, got ${code}"
+            exit 1
+          fi
+          echo "OK /openapi.json returns 404"
+          if docker exec genai-smoke sh -c 'echo probe > /app/src/write-probe' 2>/dev/null; then
+            echo "app must not be able to write to /app/src"
+            exit 1
+          fi
+          echo "OK write denied in /app/src"
+          if docker exec genai-smoke sh -c 'echo probe > /opt/venv/write-probe' 2>/dev/null; then
+            echo "app must not be able to write to /opt/venv"
+            exit 1
+          fi
+          echo "OK write denied in /opt/venv"
           echo "container smoke passed"
 
       - name: Stop smoke container
@@ -174,3 +187,72 @@ jobs:
           name: sbom-spdx
           path: sbom.spdx.json
           if-no-files-found: error
+
+      - name: Save tested image for publishing
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: docker save thehouse-genai:ci -o image.tar
+
+      - name: Upload tested image
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: genai-image
+          path: image.tar
+          if-no-files-found: error
+
+  publish:
+    name: Publish image to GHCR
+    needs: image
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    outputs:
+      digest: ${{ steps.push.outputs.digest }}
+    steps:
+      - name: Download tested image
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: genai-image
+          path: .
+
+      - name: Download SBOM
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: sbom-spdx
+          path: .
+
+      - name: Load the exact image that passed smoke and scan
+        run: docker load -i image.tar
+
+      - name: Login to GHCR
+        run: echo "${{ github.token }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Push by immutable SHA tag
+        id: push
+        run: |
+          set -euo pipefail
+          ref="ghcr.io/thehouse-team/thehouse-genai:sha-${{ github.sha }}"
+          docker tag thehouse-genai:ci "${ref}"
+          docker push "${ref}"
+          digest="$(docker image inspect --format '{{index .RepoDigests 0}}' "${ref}" | sed 's/^.*@//')"
+          echo "digest=${digest}" >> "$GITHUB_OUTPUT"
+          echo "**Image:** \`${ref}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Digest:** \`${digest}\`" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ghcr.io/thehouse-team/thehouse-genai
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
+
+      - name: Attest SBOM
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ghcr.io/thehouse-team/thehouse-genai@${{ steps.push.outputs.digest }}
+          sbom-path: sbom.spdx.json
+          push-to-registry: true

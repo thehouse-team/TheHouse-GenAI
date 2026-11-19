@@ -135,3 +135,24 @@ Permanece fuera: exponer el servicio a internet, el E2E Backend → GenAI (010),
 capa de pago de Gemini con tope de gasto, la agregación global de métricas y presupuesto,
 la creación de un entorno `staging` y cualquier cambio en los contratos de la API. Las
 decisiones D1–D14 están en `plan.md` y en `memoria.md`.
+
+## Apéndice A — Runbook de publicación en GHCR (B4)
+
+- El job `publish` solo existe en `push` a `main` y depende de `image` en verde. Publica
+  `ghcr.io/thehouse-team/thehouse-genai:sha-<SHA completo>`; no se publica ningún tag
+  mutable ni `latest`. El digest se expone como output del job y se escribe en el resumen.
+- **Visibilidad del paquete:** el paquete de GHCR debe ser **PÚBLICO**. Azure Container Apps
+  descargará la imagen sin credenciales de registro; si el paquete fuera privado harían
+  falta credenciales de GitHub en ACA, lo que queda fuera de esta spec.
+- Cómo verificarlo tras el primer push:
+  1. Abrir `https://github.com/orgs/thehouse-team/packages/container/package/thehouse-genai`
+     y comprobar que el paquete indica `Public`.
+  2. Con `gh`: `gh api /orgs/thehouse-team/packages/container/thehouse-genai --jq .visibility`
+     debe devolver `public`.
+  3. Sin autenticar (para imitar a ACA): `docker pull
+     ghcr.io/thehouse-team/thehouse-genai:sha-<SHA>` desde un runner limpio o una sesión sin
+     `docker login` debe terminar correctamente.
+  4. Si el paquete quedara privado: `Settings → Packages → thehouse-genai → Change
+     visibility → Public`, y repetir la comprobación 3 antes de B5.
+- No se debe publicar un tag que no haya pasado `image` (smoke + escaneo). El paquete se
+  referencia por digest en el despliegue (B5), nunca por tag.

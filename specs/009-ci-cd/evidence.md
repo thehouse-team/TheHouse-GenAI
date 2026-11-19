@@ -280,6 +280,11 @@ entre ambos locks, con un test adicional que exige los marcadores de `uvloop` y
 extras, así que `uvicorn` aparece sin `[standard]` y el test ya no exige el extra en la
 línea del pin).
 
+Hecho registrado el 2026-11-19: los bloques B0–B3 de esta spec entraron a `main` en el PR
+#9 de forma anticipada, mediante un merge de un compañero sobre un borrador. La spec 009
+sigue **ACTIVE**; G10 continúa en la rama `feature/deployment-cd`, creada desde `main`
+actualizado.
+
 ## Primera ejecución real del job `image` (PR #9, run 44464597319)
 
 Doble verificación: el **estado de cada step** se obtuvo de la API pública de GitHub
@@ -341,6 +346,65 @@ mismo digest `sha256:5e2bdb1b0d542d5039cffb8181c65930093949194a65c365dfb1b0fe13a
 con `last_updated` `2026-11-08T05:06:56Z`; no hay digest más reciente que ya incluya el
 paquete corregido, por lo que se aplica el paso 2. El parche lleva un comentario para
 retirarlo cuando el digest base lo incluya (Dependabot propondrá el nuevo digest).
+
+## Bloque B4 — Publicación en GHCR (sin commit, según instrucción)
+
+Acciones nuevas fijadas por SHA verificado en la API oficial de GitHub (tag dereferenciado;
+ningún valor escrito de memoria):
+
+| Acción | Versión | SHA | URL de la release |
+| --- | --- | --- | --- |
+| `actions/attest-build-provenance` | v4.2.2 | `4d101475d8b20a2381f78447822ac1eab6504dd8` | https://github.com/actions/attest-build-provenance/releases/tag/v4.2.2 |
+| `actions/attest` | v4.2.2 | `1e69f48acb82d1966a394da916b4c1698aa569d6` | https://github.com/actions/attest/releases/tag/v4.2.2 |
+| `actions/download-artifact` | v8.0.2 | `9000827ccba6bdab643e8b6fd33ac0654aef8333` | https://github.com/actions/download-artifact/releases/tag/v8.0.2 |
+
+`actions/attest-sbom` no se usa: su propio `action.yml` en v4.1.0 emite el aviso
+`actions/attest-sbom has been deprecated, please use actions/attest instead`. El SBOM se
+atesta con `actions/attest` mediante `sbom-path`.
+
+Garantía de que se publica la imagen probada: el job `image` construye **una sola vez**
+con `build-push-action` (`push: false`, `load: true`, tag local `thehouse-genai:ci`); el
+smoke y Trivy se ejecutan contra **ese mismo tag local**. Si todo pasa y el evento es
+`push` a `main`, ese step hace `docker save thehouse-genai:ci -o image.tar` y lo sube como
+artifact `genai-image`. El job `publish` no vuelve a construir: descarga ese artifact,
+hace `docker load -i image.tar`, y solo aplica `docker tag` + `docker push` con el tag
+inmutable `sha-<SHA completo>`. El `docker push` devuelve el digest, que se usa como
+`subject-digest` de ambas attestation y se escribe en el resumen del job. No hay
+`build-push-action` en el job `publish`.
+
+Permisos del job `publish`: `contents: read`, `packages: write`, `id-token: write`,
+`attestations: write`. Login en `ghcr.io` con `${{ github.token }}` mediante
+`--password-stdin`; el workflow no contiene la cadena `secrets.` ni `:latest`.
+
+Mejora del smoke aplicada: cada verificación emite su propia línea `OK ...` (payload,
+sin `Server`, uid 10001, `/docs`, `/openapi.json`, y escritura denegada en `/app/src` y
+`/opt/venv`), seguida de `container smoke passed`.
+
+## Primera tanda de PRs de Dependabot (#10, #11, #12)
+
+Tras el merge del PR #9, Dependabot abrió tres PRs que se cierran:
+
+| PR | Ecosistema | Propuesta | Motivo del cierre |
+| --- | --- | --- | --- |
+| #10 | docker | `python:3.12-slim` → `python:3.15-slim` | Cambia la versión mayor de Python; el CI falló. El servicio está fijado a 3.12 (constitución y `requires-python >=3.12`), y el salto de runtime queda fuera de G10. Se quiere seguir recibiendo nuevos digests y parches de 3.12-slim. |
+| #11 | pip | `mypy <2.0` → `<3.0` en `pyproject.toml` | Amplía a una versión mayor y no regenera los locks universales. |
+| #12 | pip | `pytest <9.0` → `<10.0` en `pyproject.toml` | Igual que #11: salto de versión mayor sin regenerar los locks. |
+
+Ajuste aplicado en `.github/dependabot.yml` en esta rama:
+
+- `docker`: `ignore` con `dependency-name: "python"` para
+  `version-update:semver-major` y `version-update:semver-minor`. Siguen llegando nuevos
+  digests y parches de 3.12-slim.
+- `pip`: `ignore` con `dependency-name: "*"` para `version-update:semver-major`, más un
+  comentario que documenta que Dependabot no regenera `requirements.lock` ni
+  `requirements-dev.lock`; cada PR de pip debe regenerarlos con el comando `uv` de la
+  cabecera de cada lock antes de mergearse, y el job `lock-drift` lo hará fallar si no.
+- `github-actions`: sin cambios; actualizar acciones fijadas por SHA es deseable.
+- `cooldown.default-days: 7` se mantiene en los tres ecosistemas.
+
+Validación local: `yaml.safe_load` correcto y nuevos tests de texto que comprueban los
+`ignore` de docker y pip, el comentario de regeneración y el cooldown en los tres
+ecosistemas.
 
 ## Bloques B2–B8
 
