@@ -380,6 +380,32 @@ Mejora del smoke aplicada: cada verificación emite su propia línea `OK ...` (p
 sin `Server`, uid 10001, `/docs`, `/openapi.json`, y escritura denegada en `/app/src` y
 `/opt/venv`), seguida de `container smoke passed`.
 
+## Primera tanda de PRs de Dependabot (#10, #11, #12)
+
+Tras el merge del PR #9, Dependabot abrió tres PRs que se cierran:
+
+| PR | Ecosistema | Propuesta | Motivo del cierre |
+| --- | --- | --- | --- |
+| #10 | docker | `python:3.12-slim` → `python:3.15-slim` | Cambia la versión mayor de Python; el CI falló. El servicio está fijado a 3.12 (constitución y `requires-python >=3.12`), y el salto de runtime queda fuera de G10. Se quiere seguir recibiendo nuevos digests y parches de 3.12-slim. |
+| #11 | pip | `mypy <2.0` → `<3.0` en `pyproject.toml` | Amplía a una versión mayor y no regenera los locks universales. |
+| #12 | pip | `pytest <9.0` → `<10.0` en `pyproject.toml` | Igual que #11: salto de versión mayor sin regenerar los locks. |
+
+Ajuste aplicado en `.github/dependabot.yml` en esta rama:
+
+- `docker`: `ignore` con `dependency-name: "python"` para
+  `version-update:semver-major` y `version-update:semver-minor`. Siguen llegando nuevos
+  digests y parches de 3.12-slim.
+- `pip`: `ignore` con `dependency-name: "*"` para `version-update:semver-major`, más un
+  comentario que documenta que Dependabot no regenera `requirements.lock` ni
+  `requirements-dev.lock`; cada PR de pip debe regenerarlos con el comando `uv` de la
+  cabecera de cada lock antes de mergearse, y el job `lock-drift` lo hará fallar si no.
+- `github-actions`: sin cambios; actualizar acciones fijadas por SHA es deseable.
+- `cooldown.default-days: 7` se mantiene en los tres ecosistemas.
+
+Validación local: `yaml.safe_load` correcto y nuevos tests de texto que comprueban los
+`ignore` de docker y pip, el comentario de regeneración y el cooldown en los tres
+ecosistemas.
+
 ## Bloques B2–B8
 
 - [x] Digest de `python:3.12-slim` con fecha y URL de la fuente oficial (B2):

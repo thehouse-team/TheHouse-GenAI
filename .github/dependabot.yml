@@ -11,6 +11,14 @@ updates:
     commit-message:
       prefix: "chore(deps)"
     open-pull-requests-limit: 5
+    # El servicio usa python 3.12; un cambio de versión mayor o menor (3.12 -> 3.15)
+    # cambia el runtime y rompe el CI. Sí deben llegar nuevos digests y parches de
+    # 3.12-slim, que es lo que corrige CVEs del sistema base.
+    ignore:
+      - dependency-name: "python"
+        update-types:
+          - "version-update:semver-major"
+          - "version-update:semver-minor"
 
   - package-ecosystem: "pip"
     directory: "/"
@@ -23,6 +31,14 @@ updates:
     commit-message:
       prefix: "chore(deps)"
     open-pull-requests-limit: 5
+    # Dependabot no regenera nuestros locks universales (requirements.lock y
+    # requirements-dev.lock): solo toca pyproject.toml. Cualquier PR de pip debe
+    # regenerar ambos locks con el comando uv documentado en la cabecera de cada
+    # lock antes de mergearse; el job lock-drift lo hará fallar si no se hace.
+    ignore:
+      - dependency-name: "*"
+        update-types:
+          - "version-update:semver-major"
 
   - package-ecosystem: "github-actions"
     directory: "/"

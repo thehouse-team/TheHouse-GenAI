@@ -163,6 +163,38 @@ def test_dependabot_has_three_ecosystems_and_seven_day_cooldown() -> None:
     assert text.count("default-days: 7") == 3
 
 
+def _dependabot_ecosystem(name: str, text: str) -> str:
+    """Return the config block of one ecosystem from dependabot.yml."""
+
+    marker = f'package-ecosystem: "{name}"'
+    start = text.index(marker)
+    rest = text[start:]
+    next_markers = [
+        rest.find(f'package-ecosystem: "{other}"')
+        for other in ("docker", "pip", "github-actions")
+        if other != name
+    ]
+    ends = [position for position in next_markers if position >= 0]
+    return rest[: min(ends)] if ends else rest
+
+
+def test_dependabot_docker_ignores_python_version_bumps() -> None:
+    text = DEPENDABOT.read_text(encoding="utf-8")
+    docker = _dependabot_ecosystem("docker", text)
+    assert 'dependency-name: "python"' in docker
+    assert '"version-update:semver-major"' in docker
+    assert '"version-update:semver-minor"' in docker
+
+
+def test_dependabot_pip_ignores_major_and_documents_lock_regeneration() -> None:
+    text = DEPENDABOT.read_text(encoding="utf-8")
+    pip = _dependabot_ecosystem("pip", text)
+    assert 'dependency-name: "*"' in pip
+    assert '"version-update:semver-major"' in pip
+    assert "Dependabot no regenera nuestros locks universales" in pip
+    assert "lock-drift" in pip
+
+
 def test_b3_jobs_use_minimal_permissions() -> None:
     text = _workflow()
     for name in ("quality", "lock-drift", "image"):
