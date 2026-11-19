@@ -1,6 +1,6 @@
 # Constitución — TheHouse GenAI
 
-Versión 1.1 · Ratificada 2026-11-12 · Aplica a todo el repositorio.
+Versión 1.2 · Ratificada 2026-11-18 · Aplica a todo el repositorio.
 
 ## Preámbulo
 
@@ -77,13 +77,18 @@ en `memoria.md`. Este repositorio arranca con `001-foundation` como única spec
 ## Artículo 9 — Stack y simplicidad
 
 Python 3.12+, FastAPI, Pydantic, Uvicorn, httpx, pytest, ruff y mypy. Sin Docker en este
-repositorio. Capas: `api/`, `application/`, `domain/`, `providers/`, `infrastructure/`.
-Se prefiere la solución más pequeña que cumpla el contrato y pueda probarse.
+repositorio, salvo el `Dockerfile` y el `.dockerignore` autorizados por la enmienda 1.2
+para la imagen de despliegue. Se prohíben `docker-compose`, las bases de datos, los
+servicios externos nuevos y las dependencias nuevas en `pyproject.toml` con este fin.
+Capas: `api/`, `application/`, `domain/`, `providers/`, `infrastructure/`. Se prefiere la
+solución más pequeña que cumpla el contrato y pueda probarse.
 
 ## Artículo 10 — Calidad y CI
 
 `ruff check .`, `mypy src` y `pytest` son obligatorios y bloqueantes. El CI replica esos
-gates. No se hace commit con gates en rojo. No hay CD ni despliegue en G01.
+gates. No se hace commit con gates en rojo. El CD hacia `production` se rige por la spec
+009 y la enmienda 1.2: despliegue por digest, OIDC, entorno protegido con aprobación y
+rollback por revisiones de Container Apps.
 
 ## Cumplimiento
 
@@ -96,6 +101,7 @@ excepciones requieren una enmienda explícita de esta constitución y quedan reg
 | Versión | Fecha | Cambio | Motivo |
 | --- | --- | --- | --- |
 | 1.1 | 2026-11-12 | Artículo 8: estados `PLANNED` → `ACTIVE` → `IMPLEMENTED` y regla de una sola spec `ACTIVE`. Artículo 5: el adaptador concreto de proveedor se define en la spec 011. | Desacoplar la spec en curso del roadmap y separar el contrato del puerto de la integración con un proveedor real. |
+| 1.2 | 2026-11-18 | Artículo 9: se autoriza un único `Dockerfile` y un `.dockerignore` para construir la imagen de despliegue de GenAI; quedan prohibidos `docker-compose` y cualquier dependencia nueva en `pyproject.toml` con este fin. Artículo 10: se autoriza CD hacia el entorno protegido `production` de GitHub, por digest y con aprobación manual, según la spec 009. | Cuota 0 de App Service en la suscripción de prueba y alineación con el Backend, desplegado como Container App en el mismo entorno. |
 
 La versión 1.0 fue ratificada el 2026-11-08. Toda enmienda futura se registra en esta
 tabla y en `memoria.md`.

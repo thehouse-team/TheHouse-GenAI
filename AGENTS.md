@@ -11,11 +11,14 @@ otros repositorios de TheHouse; este contexto es el contrato de integración ini
 - Implementar únicamente la spec activa. La spec activa es la marcada como `ACTIVE` en
   `memoria.md`.
 - No implementar endpoints de specs en estado `PLANNED` ni nuevos proveedores LLM reales;
-  el adaptador real existe desde `011-llm-provider`. La spec activa es
-  `004-natural-language-search`, así que `parse-search` sí puede implementarse en G08.
+  el adaptador real existe desde `011-llm-provider`. La spec activa es `009-ci-cd` (G10),
+  así que el `Dockerfile`, el pipeline y el despliegue sí pueden implementarse en esta fase.
 - No calcular Smart Match, consultar propiedades ni duplicar lógica del Backend.
 - No incluir Mobile, autenticación de usuarios ni secretos reales.
-- No añadir Docker, bases de datos ni servicios externos sin una spec aprobada.
+- No añadir Docker, bases de datos ni servicios externos sin una spec aprobada. Se exceptúan
+  el `Dockerfile` y el `.dockerignore` de despliegue autorizados por la enmienda 1.2 y la
+  spec `009-ci-cd` (ACTIVE); siguen prohibidos `docker-compose` y las dependencias nuevas
+  en `pyproject.toml` con este fin.
 - No registrar tokens, API keys, passwords, cuerpos de request ni PII en logs.
 - No devolver stack traces ni mensajes internos al cliente.
 
@@ -56,6 +59,8 @@ src/thehouse_genai/
 tests/            unitarias e integración con TestClient
 scripts/          utilidades manuales, fuera de CI (spec 011)
 specs/            SDD por incremento
+Dockerfile        imagen de despliegue (spec 009, enmienda 1.2)
+.dockerignore     contexto de build estricto (spec 009)
 ```
 
 ## Convenciones
@@ -80,4 +85,5 @@ specs/            SDD por incremento
 - No hacer commit sin tests verdes.
 - No marcar specs futuras como implementadas.
 - No generar documentación redundante fuera del SDD.
-- No desplegar ni configurar un proveedor real.
+- No desplegar ni configurar un proveedor real fuera de la spec activa; el despliegue de G10
+  se rige por la spec `009-ci-cd` y el entorno protegido `production`.
