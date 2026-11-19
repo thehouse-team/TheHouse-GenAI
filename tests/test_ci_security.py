@@ -243,6 +243,29 @@ def test_attestations_are_present_and_pinned() -> None:
     assert block.count("push-to-registry: true") == 2
 
 
+def _step_block(job: str, name: str) -> str:
+    """Return one step block from a job, delimited by the next step."""
+
+    marker = f"      - name: {name}\n"
+    start = job.index(marker) + len(marker)
+    collected: list[str] = []
+    for line in job[start:].splitlines(keepends=True):
+        if line.startswith("      - name:") or (line and not line.startswith(" ")):
+            break
+        collected.append(line)
+    return "".join(collected)
+
+
+def test_attestation_subjects_use_digest_without_at_in_name() -> None:
+    block = _job_block(_workflow(), "publish")
+    for name in ("Attest build provenance", "Attest SBOM"):
+        step = _step_block(block, name)
+        assert "subject-digest: ${{ steps.push.outputs.digest }}" in step, name
+        match = re.search(r"subject-name:\s*(\S+)", step)
+        assert match is not None, name
+        assert "@" not in match.group(1), name
+
+
 def test_published_image_is_the_tested_one() -> None:
     text = _workflow()
     image = _job_block(text, "image")

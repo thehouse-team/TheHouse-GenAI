@@ -253,6 +253,7 @@ jobs:
       - name: Attest SBOM
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
-          subject-name: ghcr.io/thehouse-team/thehouse-genai@${{ steps.push.outputs.digest }}
+          subject-name: ghcr.io/thehouse-team/thehouse-genai
+          subject-digest: ${{ steps.push.outputs.digest }}
           sbom-path: sbom.spdx.json
           push-to-registry: true
