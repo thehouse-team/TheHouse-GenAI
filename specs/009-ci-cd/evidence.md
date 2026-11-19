@@ -406,6 +406,35 @@ Validación local: `yaml.safe_load` correcto y nuevos tests de texto que comprue
 `ignore` de docker y pip, el comentario de regeneración y el cooldown en los tres
 ecosistemas.
 
+## Primer publish real en `main` (run CI #27)
+
+Resultado: la imagen se publicó y la attestation de procedencia se firmó
+correctamente, pero falló `Attest SBOM`:
+
+```text
+Run actions/attest@1e69f48... with:
+  subject-name: ghcr.io/thehouse-team/thehouse-genai@sha256:782fd3af...
+  sbom-path: sbom.spdx.json
+Error: One of subject-path, subject-digest, or subject-checksums must be provided
+```
+
+Digest publicado en ese run:
+`sha256:782fd3afce2aadddf66b273158f5abf73600bc612641dddad23ed56dd9a1f5b0`.
+Estado: publicado con procedencia, **sin attestation de SBOM**. Causa: el paso
+`Attest SBOM` pasaba el digest dentro de `subject-name` (`...genai@sha256:...`) y no
+proporcionaba `subject-digest`; la acción `actions/attest` exige uno de
+`subject-path`, `subject-digest` o `subject-checksums`. El paso de procedencia sí usaba
+el esquema correcto (`subject-name` sin digest + `subject-digest` con el digest del push).
+
+Corrección aplicada en `ci.yml`: `Attest SBOM` usa ahora
+`subject-name: ghcr.io/thehouse-team/thehouse-genai` y
+`subject-digest: ${{ steps.push.outputs.digest }}`, idéntico al paso de procedencia.
+Nuevo test de texto: ambos pasos de attestation declaran `subject-digest` y ningún
+`subject-name` contiene `@`.
+
+**Este digest no se usará para desplegar.** El despliegue (B5) utilizará el digest del
+próximo publish en el que ambas attestations terminen en verde.
+
 ## Bloques B2–B8
 
 - [x] Digest de `python:3.12-slim` con fecha y URL de la fuente oficial (B2):
