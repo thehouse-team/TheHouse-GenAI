@@ -50,7 +50,8 @@ def test_corpus_exists_next_to_the_tests() -> None:
 def test_ci_workflow_never_runs_the_smoke_script() -> None:
     workflow = CI_WORKFLOW.read_text(encoding="utf-8")
 
-    assert "smoke" not in workflow
+    # The container smoke step is part of spec 009; CI must never invoke the
+    # manual, opt-in script from 004 (the "scripts/" guard enforces that).
     assert "scripts/" not in workflow
 
 

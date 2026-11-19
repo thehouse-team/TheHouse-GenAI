@@ -1,0 +1,11 @@
+# Estricta lista blanca: solo estas rutas entran en el contexto de build.
+*
+!src/
+!src/**
+!pyproject.toml
+!requirements.lock
+!README.md
+
+# Ni siquiera dentro de src/ se envia bytecode cacheado.
+src/**/__pycache__/
+src/**/*.py[cod]

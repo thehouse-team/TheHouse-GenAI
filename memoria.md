@@ -20,7 +20,7 @@ Smart Match, no consulta propiedades y no contiene Mobile.
 | 006-moderation | IMPLEMENTED | Política y moderación de la salida generativa (alcance A) |
 | 007-observability | IMPLEMENTED | Métricas en memoria, presupuesto diario, endpoints internos, SLOs y alertas documentadas |
 | 008-testing | PLANNED | Estrategia completa y contract tests (transversal, cierra en G09) |
-| 009-ci-cd | PLANNED | Pipeline completo y despliegue futuro |
+| 009-ci-cd | ACTIVE | Imagen endurecida, CI/CD, OIDC y despliegue en ACA (G10) |
 | 010-integration-thehouse | PLANNED | Contratos y operación con Backend |
 | 011-llm-provider | IMPLEMENTED | Evaluación de proveedores y adaptador real detrás del puerto |
 
@@ -55,7 +55,13 @@ real con `gemini-3.5-flash-lite` cerró en 29/30 exactos tras reintentos; el dia
 ps-03 reveló el bug del parser estricto, corregido sin relajar la validación. `maxBudget`
 y `maxDistanceKm` se serializan como números JSON porque el contrato con Backend manda.
 
-En este momento **ninguna spec está ACTIVE**.
+`009-ci-cd` (G10) está **ACTIVE** desde el 2026-11-18 sobre la rama `feature/deployment`,
+con plan aprobado por el usuario y la enmienda 1.2 ratificada. Su objetivo es publicar la
+imagen del servicio en GHCR y desplegarla por digest en la Container App
+`ca-thehouse-genai-u2` del entorno `cae-thehouse-u2` (mismo entorno que el Backend), con
+ingreso interno, OIDC, entorno `production` protegido y rollback por revisiones. Las
+decisiones D1–D14 se registran más abajo. `008-testing` y `010-integration-thehouse`
+permanecen `PLANNED`.
 
 `007-observability` (G07) se cerró como **IMPLEMENTED** el 2026-11-18 sobre la
 rama `feature/observability` con las decisiones 1–9 aplicadas: métricas en memoria con
@@ -100,6 +106,11 @@ permanecen `IMPLEMENTED` y el resto de specs, `PLANNED`. Solo una spec puede est
   regla anterior de una sola spec `IMPLEMENTED`. Artículo 5: el adaptador concreto de
   proveedor se define en la spec 011. Registrada en `constitution.md`, sección
   "Enmiendas".
+- **Enmienda 1.2 (2026-11-18).** Artículo 9: autoriza `Dockerfile` + `.dockerignore` solo
+  para la imagen de despliegue (sin `docker-compose` ni dependencias nuevas en
+  `pyproject.toml`). Artículo 10: autoriza CD a `production` por digest con aprobación.
+  Motivo: cuota 0 de App Service y consistencia con el Backend en ACA. Registrada en
+  `constitution.md`, sección "Enmiendas".
 
 ## Decisiones tomadas en 001
 
@@ -396,6 +407,38 @@ Ajustes obligatorios incorporados al diseño:
 3. "entre 2000 y 3000" → `maxBudget=3000` (tope del rango) con confianza máxima `medium`.
 4. No escribir caracteres CJK ni de ancho completo en ningún archivo.
 
+## Decisiones tomadas en 009
+
+Plan aprobado por el usuario el 2026-11-18. Las decisiones D1–D13 más el ajuste de
+seguridad D14 se aplican en los bloques B0–B8 de `specs/009-ci-cd/plan.md`.
+
+| # | Decisión |
+| --- | --- |
+| D1 | Conservar la rama `feature/deployment` (ya creada y limpia) en lugar de renombrarla a `feature/ci-cd`. |
+| D2 | Ratificar la enmienda 1.2 con el texto exacto acordado, sin cambios. |
+| D3 | Fijar las acciones de GitHub por SHA **durante B3**, obtenido solo de la release oficial; sin acceso web, pedir el valor al usuario y nunca escribirlo de memoria. Igual criterio para el digest de `python:3.12-slim` en B2. |
+| D4 | Un único `.github/workflows/ci.yml` con los jobs `quality`, `image`, `publish` y `deploy`; el digest viaja por `needs` sin artifacts entre workflows. |
+| D5 | Un único entorno protegido de GitHub: `production`. Sin entorno `staging` separado. |
+| D6 | La infraestructura se define en Bicep y el usuario la aplica manualmente desde Azure Cloud Shell; el CI **solo** actualiza la imagen y gestiona revisiones. |
+| D7 | Nombre de la Container App: `ca-thehouse-genai-u2`, en `cae-thehouse-u2`, `rg-thehouse-u2`, East US 2. |
+| D8 | `minReplicas=1`, `maxReplicas=1`, 0.25 vCPU / 0.5 GiB, igual que el Backend. Evita arranque en frío frente al timeout de 8 s y mantiene globales el rate limit, el presupuesto y las métricas por proceso. |
+| D9 | Secretos directos de Container Apps para las tres claves (`GENAI_SERVICE_KEY`, `GENAI_METRICS_KEY`, `GENAI_API_KEY`) y la clave anterior durante rotación. Sin Key Vault en esta spec. |
+| D10 | El CI **no** obtiene lectura de Log Analytics: el workspace contiene también los logs del Backend. El gating usa únicamente estado de revisión, réplicas y probes de ACA. |
+| D11 | Verificación puntual con `az containerapp exec` **dentro del contenedor de GenAI**, llamando a `localhost:8000` con Python; no se toca el contenedor del Backend. La E2E de red Backend → GenAI queda en la spec 010 (G09). |
+| D12 | HSTS fuera de la aplicación: se documenta como responsabilidad del borde (ACA/gateway). CSP sigue fuera por D9 de 005. El header `Server` se suprime en el `CMD` de uvicorn con `--no-server-header`. |
+| D13 | Proveedor de capa gratuita, modelo `gemini-3.5-flash-lite`, 400 llamadas/día y coste 0 en las tarifas configuradas. Deuda: crear proyecto de pago con tope de gasto antes de la demo con datos reales. |
+| D14 | **Ajuste de seguridad obligatorio:** la asignación de rol de la identidad OIDC tiene alcance **solo sobre el recurso** `ca-thehouse-genai-u2`, nunca sobre `rg-thehouse-u2` ni la suscripción, porque el grupo contiene también el Backend. Se usa un rol personalizado sin `listSecrets` en lugar de `Container Apps Contributor`, cuyos comodines `Microsoft.App/containerApps/*/action` conceden lectura de secretos en texto plano. Fuentes oficiales: `https://learn.microsoft.com/en-us/azure/role-based-access-control/permissions/compute` y `https://learn.microsoft.com/en-us/azure/container-apps/manage-secrets`. |
+
+La verificación del rol se reforzó contra la documentación oficial: los permisos mínimos
+disponibles son `Microsoft.App/containerApps/read`, `Microsoft.App/containerApps/write`,
+`Microsoft.App/containerApps/revisions/read`, `.../revisions/activate/action`,
+`.../revisions/deactivate/action`, `.../revisions/restart/action` y
+`.../revisions/replicas/read`. Las revisiones son recursos hijos de la Container App, por lo
+que un rol asignado sobre esa app cubre también su lectura y gestión. `exec` no se concede
+al CI: la decisión D11 la ejecuta el usuario manualmente. Si Azure exigiera además
+`Microsoft.App/managedEnvironments/read` para `az containerapp update`, no se ampliará el
+alcance por iniciativa propia: se verifica en Cloud Shell durante B4 y se escala al usuario.
+
 ## Evidencia resumida
 
 ### 001-foundation
@@ -557,6 +600,14 @@ Ajustes obligatorios incorporados al diseño:
 - Deuda 004-(d): se mantiene el `StarletteDeprecationWarning` de `TestClient` con `httpx`;
   se revisa en 008. Es la misma deuda (e)/006-(d)/007-(e) ya registrada.
 
+- Mejora opcional pendiente de decisión (G10, tras PR #9): sustituir `uvicorn[standard]`
+  por `uvicorn` en `[project.dependencies]`. El extra `standard` aporta `uvloop`,
+  `httptools`, `watchfiles`, `websockets`, `python-dotenv`, `pyyaml`, `click` y `h11`;
+  el servicio no usa websockets ni hot-reload en producción, así que reduciría
+  dependencias y superficie de ataque. No se cambió en esta corrección: el incidente se
+  resolvió con locks universales y el objetivo era conservar las versiones resueltas.
+  Decidir en una spec/PR posterior con su propio análisis de impacto.
+
 ## Próximo paso
 
 G07 = `007-observability` y G08 = `004-natural-language-search` quedaron **IMPLEMENTED**.
@@ -565,8 +616,15 @@ reutilizados, moderación y PII de punta a punta, ruta de métricas propia, corp
 casos y script manual opt-in; la evidencia está en
 `specs/004-natural-language-search/evidence.md`.
 
-G09 = `010-integration-thehouse` es el próximo paso: contratos y operación con Backend,
-cerrando `008-testing` con contract tests y E2E en staging. G10 = `009-ci-cd` aplicará los
-timeouts de producción de D18, activará el presupuesto (deuda 007-(b)) y decidirá el
-despliegue (mTLS, HSTS/CSP, cabecera `Server`, capa de pago de Gemini —deuda 004-(b)—,
-rate limit global y agregación de métricas; deudas (a) y (b) de 005 y 007-(a)).
+G10 = `009-ci-cd` es la fase en curso (spec **ACTIVE**). Ejecuta los bloques B0–B8 del plan:
+gobernanza, imagen endurecida, CI/CD con GHCR y SBOM, despliegue por digest en ACA con OIDC
+y rol de alcance único sobre `ca-thehouse-genai-u2`, verificación por revisiones/probes y
+rollback. Aplica los timeouts de producción de D18 (`GENAI_TIMEOUT_SECONDS=6`), activa el
+presupuesto (deuda 007-(b)), fija `Server` en el borde y documenta HSTS fuera de la app
+(D12), y deja para G09 la E2E de red Backend → GenAI (D11).
+
+G09 = `010-integration-thehouse` sigue `PLANNED`: contratos y operación con Backend,
+cerrando `008-testing` con contract tests y E2E en staging. Quedan como deuda para esa fase
+o posteriores la capa de pago de Gemini con tope de gasto (D13, deuda 004-(b)), mTLS
+(005-D2), la agregación de métricas y el cupo global (007-(a), deuda (a) de 005) y la
+recalibración de SLOs (007-(d)).

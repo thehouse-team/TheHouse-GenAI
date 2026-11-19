@@ -20,6 +20,12 @@ G08 (`004-natural-language-search`) quedó **IMPLEMENTADO**: `parse-search` conv
 consulta en filtros validados, con la misma autenticación, moderación, PII y métricas que
 `explain-match`.
 
+**G10 (`009-ci-cd`) está en curso.** Prepara la imagen de despliegue y el pipeline para
+publicarla en GHCR y desplegarla por digest en Azure Container Apps con OIDC, ingreso
+interno y rollback por revisiones. La constitución 1.2 autoriza el `Dockerfile` y el
+`.dockerignore` exclusivamente para la imagen de despliegue; no se añade `docker-compose`
+ni dependencias nuevas al proyecto.
+
 G02 define el puerto `GenerativeAiProvider`, sus DTOs inmutables, la taxonomía de
 errores, el guard central de timeout y límite de entrada, un `FakeProvider`
 determinista y la factory de selección: todo offline, sin sockets y sin proveedor real.
