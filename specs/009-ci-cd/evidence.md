@@ -183,6 +183,57 @@ ausencia de ARG/ENV con nombres de secretos, ausencia de HEALTHCHECK y presencia
 `EXPOSE 8000` y de los flags de Python.
 No se ha construido la imagen: no hay Docker local; la construcción real se valida en B3.
 
+## Bloque B3 — CI de imagen (sin commit, según instrucción)
+
+Acciones fijadas por SHA. Versiones obtenidas de `GET /repos/{owner}/{repo}/releases/latest`
+y SHA dereferenciado desde `GET /repos/{owner}/{repo}/git/ref/tags/{tag}` (objeto de tag
+anotado cuando aplica). Consulta realizada el 2026-11-18. Ningún valor escrito de memoria.
+
+| Acción | Versión | SHA | URL de la release |
+| --- | --- | --- | --- |
+| `actions/checkout` | v7.0.1 | `3d3c42e5aac5ba805825da76410c181273ba90b1` | https://github.com/actions/checkout/releases/tag/v7.0.1 |
+| `actions/setup-python` | v7.1.0 | `6d4fd22b20465ccc0f7354476588e8df7c9ca0e0` | https://github.com/actions/setup-python/releases/tag/v7.1.0 |
+| `actions/upload-artifact` | v7.0.2 | `cf430e030ddbb5b0abf93d22962f4752f3646cd9` | https://github.com/actions/upload-artifact/releases/tag/v7.0.2 |
+| `docker/setup-buildx-action` | v4.4.1 | `f87e5991a6d7451dcb8d9637bfbc97413f497069` | https://github.com/docker/setup-buildx-action/releases/tag/v4.4.1 |
+| `docker/build-push-action` | v7.4.0 | `c3c9e263c25d99ce0380d002d59b67737d91b0dc` | https://github.com/docker/build-push-action/releases/tag/v7.4.0 |
+| `aquasecurity/trivy-action` | v0.36.0 | `ed142fd0673e97e23eac54620cfb913e5ce36c25` | https://github.com/aquasecurity/trivy-action/releases/tag/v0.36.0 |
+
+Inputs verificados en los `action.yml` de esos tags: `build-push-action` admite `push`,
+`load`, `tags`, `context` y `file`; `trivy-action` admite `scan-type`, `image-ref`,
+`exit-code`, `ignore-unfixed`, `severity`, `format`, `output` y `trivyignores`.
+
+Otros cambios:
+
+- `quality`: `pip install --require-hashes -r requirements-dev.lock` y
+  `pip install --no-deps -e .`; Ruff, Mypy y Pytest siguen bloqueantes; `pip-audit` sigue
+  informativo. El workflow no contiene la cadena `secrets.`.
+- `lock-drift`: regenera ambos locks con `pip-tools==7.7.0` y ejecuta
+  `git diff --exit-code -- requirements.lock requirements-dev.lock`.
+- `image` (`needs: quality`): buildx con `push: false`, `load: true` y tag local
+  `thehouse-genai:ci`; smoke con `GENAI_PROVIDER=fake` y `APP_ENV=production` que comprueba
+  payload exacto de `/health/ready`, ausencia de header `Server`, `id -u` = 10001, 404 en
+  `/docs` y `/openapi.json`, y escritura fallida en `/app/src` y `/opt/venv`; limpieza con
+  `if: always()`. Escaneo Trivy bloqueante (`exit-code: "1"`, `HIGH,CRITICAL`,
+  `ignore-unfixed: true`) con `.trivyignore` vacío y documentado; SBOM SPDX como artifact.
+- `.github/dependabot.yml`: ecosistemas `docker`, `pip` y `github-actions` con
+  `cooldown.default-days: 7` (clave verificada en la referencia oficial de Dependabot).
+- Los tres jobs añadidos tienen `permissions: contents: read`.
+
+Validación sintáctica local de ambos YAML con `yaml.safe_load`: correcta. La ejecución real
+en GitHub (build, smoke, escaneo y SBOM) queda pendiente; no hay Docker local ni CI remoto
+en esta sesión.
+
+Fallos intermedios detectados y corregidos en B3 (primera ejecución de gates):
+
+1. Ruff `E501` (104 > 100) en `tests/test_ci_security.py` al construir la lista de
+   `uses:`. Se partió la comprensión de lista en varias líneas.
+2. Dos tests heredados (`test_smoke_parse_search.py` y `test_smoke_script.py`) fallaron
+   porque aseveraban `"smoke" not in ci.yml` para impedir que CI ejecutara los scripts
+   manuales opt-in de 004 y 011. El smoke del contenedor de 009 introduce esa palabra
+   legítimamente. Se estrechó la aserción a `"scripts/" not in workflow`, que es el
+   contrato real (CI no invoca `scripts/smoke_*.py`) y sigue bloqueando cualquier intento
+   de ejecutarlos. No se relajó ningún gate de calidad.
+
 ## Bloques B2–B8
 
 - [x] Digest de `python:3.12-slim` con fecha y URL de la fuente oficial (B2):

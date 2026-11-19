@@ -34,9 +34,18 @@
 
 ## B3 — CI de imagen
 
-- [ ] Job `image`: build sin publicar en PR, escaneo de vulnerabilidades y SBOM.
-- [ ] Acciones fijadas por SHA verificado en release oficial (D3).
-- [ ] Tests de texto del workflow: gates, `secrets.`, publicación y pinning.
+- [x] Job `quality` instala desde `requirements-dev.lock` con `--require-hashes` y luego
+      `pip install --no-deps -e .`; gates bloqueantes sin cambios.
+- [x] Job `lock-drift` regenera ambos locks con pip-tools fijado y falla con `git diff`.
+- [x] Job `image` con buildx (`push: false`, `load: true`) en PR y en `main`.
+- [x] Smoke del contenedor: payload exacto, sin header `Server`, uid 10001, docs 404 y
+      escritura denegada en `/app/src` y `/opt/venv`; limpieza con `if: always()`.
+- [x] Escaneo Trivy bloqueante en HIGH/CRITICAL con `.trivyignore` vacío documentado.
+- [x] SBOM SPDX como artifact.
+- [x] `.github/dependabot.yml` con docker, pip y github-actions y cooldown de 7 días.
+- [x] Todas las acciones fijadas por SHA de 40 hex verificado en release oficial.
+- [x] Tests de texto del workflow, dependabot y permisos mínimos.
+- [ ] Sin commit y sin avanzar a B4 (según instrucción).
 
 ## B4 — Publicación y CD
 

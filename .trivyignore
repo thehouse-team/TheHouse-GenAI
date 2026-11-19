@@ -1,0 +1,3 @@
+# Documented vulnerability exceptions for the image scan (spec 009, B3).
+# Intentionally empty. Add an entry only with a linked issue and an expiry date,
+# and review it in the same PR that introduces it.

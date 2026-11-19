@@ -11,12 +11,13 @@
 
 ## Criterios de aceptación
 
-- [ ] CI actual en verde y bloqueante.
-- [ ] Imagen construida y probada en CI, sin asumir Docker local.
+- [x] Gates verdes localmente con el lock de desarrollo; workflow actualizado (ejecución en GitHub pendiente).
+- [ ] Imagen construida y probada en CI, sin asumir Docker local (workflow listo; ejecución pendiente).
 - [x] Digest de la imagen base verificado y registrado con fuente y fecha.
 - [x] `.dockerignore` por whitelist y lock con hashes sin dependencias nuevas.
 - [ ] PR construye y escanea sin publicar; `main` publica por SHA y digest con SBOM.
-- [ ] Acciones fijadas por SHA de release oficial, sin valores de memoria.
+- [x] Acciones fijadas por SHA de release oficial, sin valores de memoria.
+- [x] Deriva de locks verificada en CI y Dependabot con tres ecosistemas y cooldown de 7 días.
 - [ ] OIDC con rol personalizado de alcance único y sin `listSecrets`.
 - [ ] Bicep aplicado manualmente; CI solo imagen y revisiones.
 - [ ] Ingreso interno, una réplica, probes, secretos y variables verificados.
