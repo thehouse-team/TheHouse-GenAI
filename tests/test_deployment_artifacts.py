@@ -17,7 +17,10 @@ DEV_LOCK = REPO_ROOT / "requirements-dev.lock"
 DOCKERIGNORE = REPO_ROOT / ".dockerignore"
 DOCKERFILE = REPO_ROOT / "Dockerfile"
 
-_PINNED = re.compile(r"^([A-Za-z0-9][A-Za-z0-9._-]*)(\[[A-Za-z0-9._,-]+\])?==([^\s\\]+)")
+_PINNED = re.compile(
+    r"^([A-Za-z0-9][A-Za-z0-9._-]*)(\[[A-Za-z0-9._,-]+\])?==([^\s\\;]+)"
+    r"(?:\s*;\s*([^\\]+?))?\s*\\?\s*$"
+)
 _SHA256 = re.compile(r"--hash=sha256:[0-9a-f]{64}\b")
 _DEV_ONLY = frozenset({"mypy", "pytest", "ruff"})
 
@@ -35,19 +38,20 @@ def _extras(bracket: str) -> frozenset[str]:
     return frozenset(_canonical(item) for item in inner.split(",") if item.strip())
 
 
-def _lock_entries(path: Path) -> dict[str, tuple[str, frozenset[str], list[str]]]:
-    """Map each pinned distribution to its version, extras and hash lines."""
+def _lock_entries(path: Path) -> dict[str, tuple[str, frozenset[str], str, list[str]]]:
+    """Map each pin to its version, extras, platform marker and hash lines."""
 
-    entries: dict[str, tuple[str, frozenset[str], list[str]]] = {}
+    entries: dict[str, tuple[str, frozenset[str], str, list[str]]] = {}
     current: str | None = None
     for line in path.read_text(encoding="utf-8").splitlines():
         match = _PINNED.match(line)
         if match is not None:
             current = _canonical(match.group(1))
-            entries[current] = (match.group(3), _extras(match.group(2) or ""), [])
+            marker = (match.group(4) or "").strip()
+            entries[current] = (match.group(3), _extras(match.group(2) or ""), marker, [])
             continue
         if current is not None and _SHA256.search(line) is not None:
-            entries[current][2].append(line.strip())
+            entries[current][3].append(line.strip())
     return entries
 
 
@@ -93,9 +97,8 @@ def _dev_requirements() -> list[tuple[str, frozenset[str]]]:
 
 def test_lock_covers_every_runtime_dependency() -> None:
     entries = _lock_entries(LOCK)
-    for name, extras in _runtime_requirements():
+    for name, _extras in _runtime_requirements():
         assert name in entries, f"{name} is missing from requirements.lock"
-        assert extras <= entries[name][1], f"{name}: extras {sorted(extras)} are not pinned"
 
 
 def test_lock_excludes_development_only_packages() -> None:
@@ -132,16 +135,15 @@ def test_dockerignore_is_a_strict_whitelist() -> None:
 
 def test_dev_lock_covers_every_direct_dependency() -> None:
     entries = _lock_entries(DEV_LOCK)
-    for name, extras in _runtime_requirements() + _dev_requirements():
+    for name, _extras in _runtime_requirements() + _dev_requirements():
         assert name in entries, f"{name} is missing from requirements-dev.lock"
-        assert extras <= entries[name][1], f"{name}: extras {sorted(extras)} are not pinned"
 
 
 def test_both_locks_pin_sha256_hashes_for_every_package() -> None:
     for path in (LOCK, DEV_LOCK):
         entries = _lock_entries(path)
         assert entries, f"{path.name} has no pinned packages"
-        for name, (_version, _extras, hashes) in entries.items():
+        for name, (_version, _extras, _marker, hashes) in entries.items():
             assert hashes, f"{path.name}: {name} has no sha256 hashes"
             for line in hashes:
                 assert _SHA256.search(line) is not None, f"{path.name}: {name} bad hash line"
@@ -151,11 +153,29 @@ def test_runtime_pins_are_identical_in_both_locks() -> None:
     runtime = _lock_entries(LOCK)
     development = _lock_entries(DEV_LOCK)
     assert runtime, "requirements.lock is empty"
-    for name, (version, extras, _hashes) in runtime.items():
+    for name, (version, extras, marker, _hashes) in runtime.items():
         assert name in development, f"{name} missing from requirements-dev.lock"
-        dev_version, dev_extras, _dev_hashes = development[name]
+        dev_version, dev_extras, dev_marker, _dev_hashes = development[name]
         assert version == dev_version, f"{name}: {version} != {dev_version}"
         assert extras == dev_extras, f"{name}: extras {sorted(extras)} != {sorted(dev_extras)}"
+        assert marker == dev_marker, f"{name}: marker {marker!r} != {dev_marker!r}"
+
+
+def test_platform_specific_pins_keep_their_markers() -> None:
+    runtime = _lock_entries(LOCK)
+    development = _lock_entries(DEV_LOCK)
+    assert "uvloop" in runtime, "uvloop must be pinned for non-Windows platforms"
+    assert "sys_platform != 'win32'" in runtime["uvloop"][2]
+    assert "colorama" in development, "colorama must be pinned for Windows"
+    assert "sys_platform == 'win32'" in development["colorama"][2]
+
+
+def test_uvicorn_standard_transitive_deps_are_pinned() -> None:
+    # A universal uv lock flattens extras: uvicorn is pinned without [standard],
+    # so the packages contributed by that extra must be pinned explicitly.
+    runtime = _lock_entries(LOCK)
+    for name in ("uvloop", "watchfiles", "websockets", "httptools", "python-dotenv"):
+        assert name in runtime, f"{name} (uvicorn[standard]) is missing from the lock"
 
 
 def test_dev_only_packages_are_split_between_locks() -> None:

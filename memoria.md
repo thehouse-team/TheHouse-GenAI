@@ -600,6 +600,14 @@ alcance por iniciativa propia: se verifica en Cloud Shell durante B4 y se escala
 - Deuda 004-(d): se mantiene el `StarletteDeprecationWarning` de `TestClient` con `httpx`;
   se revisa en 008. Es la misma deuda (e)/006-(d)/007-(e) ya registrada.
 
+- Mejora opcional pendiente de decisión (G10, tras PR #9): sustituir `uvicorn[standard]`
+  por `uvicorn` en `[project.dependencies]`. El extra `standard` aporta `uvloop`,
+  `httptools`, `watchfiles`, `websockets`, `python-dotenv`, `pyyaml`, `click` y `h11`;
+  el servicio no usa websockets ni hot-reload en producción, así que reduciría
+  dependencias y superficie de ataque. No se cambió en esta corrección: el incidente se
+  resolvió con locks universales y el objetivo era conservar las versiones resueltas.
+  Decidir en una spec/PR posterior con su propio análisis de impacto.
+
 ## Próximo paso
 
 G07 = `007-observability` y G08 = `004-natural-language-search` quedaron **IMPLEMENTED**.

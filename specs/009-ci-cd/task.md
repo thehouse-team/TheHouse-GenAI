@@ -36,7 +36,8 @@
 
 - [x] Job `quality` instala desde `requirements-dev.lock` con `--require-hashes` y luego
       `pip install --no-deps -e .`; gates bloqueantes sin cambios.
-- [x] Job `lock-drift` regenera ambos locks con pip-tools fijado y falla con `git diff`.
+- [x] Job `lock-drift` regenera ambos locks con `uv==0.13.9` universal y falla con `git diff`
+      (corrección del incidente del PR #9).
 - [x] Job `image` con buildx (`push: false`, `load: true`) en PR y en `main`.
 - [x] Smoke del contenedor: payload exacto, sin header `Server`, uid 10001, docs 404 y
       escritura denegada en `/app/src` y `/opt/venv`; limpieza con `if: always()`.

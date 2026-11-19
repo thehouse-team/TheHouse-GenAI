@@ -207,7 +207,8 @@ Otros cambios:
 - `quality`: `pip install --require-hashes -r requirements-dev.lock` y
   `pip install --no-deps -e .`; Ruff, Mypy y Pytest siguen bloqueantes; `pip-audit` sigue
   informativo. El workflow no contiene la cadena `secrets.`.
-- `lock-drift`: regenera ambos locks con `pip-tools==7.7.0` y ejecuta
+- `lock-drift`: regenera ambos locks con `uv==0.13.9` (el mismo comando que la cabecera
+  de cada lock, con `--universal --generate-hashes --python-version 3.12`) y ejecuta
   `git diff --exit-code -- requirements.lock requirements-dev.lock`.
 - `image` (`needs: quality`): buildx con `push: false`, `load: true` y tag local
   `thehouse-genai:ci`; smoke con `GENAI_PROVIDER=fake` y `APP_ENV=production` que comprueba
@@ -233,6 +234,51 @@ Fallos intermedios detectados y corregidos en B3 (primera ejecución de gates):
    legítimamente. Se estrechó la aserción a `"scripts/" not in workflow`, que es el
    contrato real (CI no invoca `scripts/smoke_*.py`) y sigue bloqueando cualquier intento
    de ejecutarlos. No se relajó ningún gate de calidad.
+
+## Incidente PR #9 — locks dependientes de la plataforma (2026-11-18)
+
+El CI del PR #9 falló en Linux: los locks se habían generado con `pip-compile` en Windows,
+donde `uvicorn[standard]` no exige `uvloop`. El lock dejó `uvloop>=0.15.1` sin fijar, y
+`pip install --require-hashes` en Linux abortó con:
+
+```text
+ERROR: In --require-hashes mode, all requirements must have their versions pinned with ==.
+    uvloop>=0.15.1 ... (from uvicorn[standard]==0.54.0->-r requirements-dev.lock)
+```
+
+Fallaron `Quality gates` (no pudo instalar) y `Lockfile drift` (el lock regenerado en
+Linux difería); `Image` quedó skipped. Lo mismo habría ocurrido con `colorama`, que solo
+aplica en Windows.
+
+Corrección: regenerar ambos locks como **universales** con `uv` fijado como herramienta
+transitoria (versión `0.13.9`, obtenida de `https://pypi.org/pypi/uv/json`, no en
+`pyproject.toml`). Comandos documentados en la cabecera de cada archivo:
+
+```text
+uv pip compile pyproject.toml --universal --generate-hashes --python-version 3.12 -o requirements.lock
+uv pip compile pyproject.toml --universal --generate-hashes --python-version 3.12 --extra dev -o requirements-dev.lock
+```
+
+Líneas con marcadores verificadas (salida real):
+
+```text
+requirements.lock:438: uvloop==0.23.0 ; platform_python_implementation != 'PyPy' and sys_platform != 'cygwin' and sys_platform != 'win32' \
+requirements-dev.lock:29: colorama==0.4.6 ; sys_platform == 'win32' \
+requirements-dev.lock:676: uvloop==0.23.0 ; platform_python_implementation != 'PyPy' and sys_platform != 'cygwin' and sys_platform != 'win32' \
+```
+
+Verificación local en Windows (salida real):
+
+```text
+Ignoring uvloop: markers 'platform_python_implementation != "PyPy" and sys_platform != "cygwin" and sys_platform != "win32"' don't match your environment
+Requirement already satisfied: colorama==0.4.6 in .\.venv\Lib\site-packages (from -r requirements-dev.lock (line 29)) (0.4.6)
+```
+
+Los 4 tests de deriva se ajustaron para comparar nombre, versión, extras **y marcador**
+entre ambos locks, con un test adicional que exige los marcadores de `uvloop` y
+`colorama` y las transitivas fijadas de `uvicorn[standard]` (uv universal aplana los
+extras, así que `uvicorn` aparece sin `[standard]` y el test ya no exige el extra en la
+línea del pin).
 
 ## Bloques B2–B8
 

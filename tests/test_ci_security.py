@@ -95,11 +95,14 @@ def test_quality_installs_from_the_dev_lock() -> None:
     assert 'pip install -e ".[dev]"' not in block
 
 
-def test_lock_drift_job_regenerates_both_locks() -> None:
+def test_lock_drift_job_regenerates_universal_locks() -> None:
     block = _job_block(_workflow(), "lock-drift")
-    assert "pip-tools==7.7.0" in block
-    assert "--output-file requirements.lock" in block
-    assert "--output-file requirements-dev.lock" in block
+    assert "uv==0.13.9" in block
+    command = "uv pip compile pyproject.toml --universal --generate-hashes --python-version 3.12"
+    assert command in block
+    assert "--extra dev" in block
+    assert "-o requirements.lock" in block
+    assert "-o requirements-dev.lock" in block
     assert "git diff --exit-code -- requirements.lock requirements-dev.lock" in block
 
 
