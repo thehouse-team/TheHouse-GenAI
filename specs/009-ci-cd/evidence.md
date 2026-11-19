@@ -376,6 +376,11 @@ Permisos del job `publish`: `contents: read`, `packages: write`, `id-token: writ
 `attestations: write`. Login en `ghcr.io` con `${{ github.token }}` mediante
 `--password-stdin`; el workflow no contiene la cadena `secrets.` ni `:latest`.
 
+Tras el primer publish real se añadió `create-storage-record: false` a ambos pasos de
+attestation: emitían el aviso `Failed to create storage record / artifact-metadata:write`.
+No necesitamos esos metadatos, así que se deshabilita (mínimo privilegio). El test de
+texto comprueba que aparece exactamente dos veces.
+
 Mejora del smoke aplicada: cada verificación emite su propia línea `OK ...` (payload,
 sin `Server`, uid 10001, `/docs`, `/openapi.json`, y escritura denegada en `/app/src` y
 `/opt/venv`), seguida de `container smoke passed`.
@@ -418,7 +423,17 @@ Run actions/attest@1e69f48... with:
 Error: One of subject-path, subject-digest, or subject-checksums must be provided
 ```
 
-Digest publicado en ese run:
+**Publish completo posterior (run CI #29):** imagen publicada con procedencia y SBOM
+firmados (Sigstore/Rekor) y paquete GHCR público. Digest de la **imagen** a desplegar:
+
+```text
+ghcr.io/thehouse-team/thehouse-genai@sha256:8b5d250ce96cd338cab3ec2c0547e8c34704c1ec13c711ed019038d79e2b9edf
+```
+
+No confundir con `sha256:05659904...`, que es el digest de la **attestation**, no de la
+imagen. El despliegue usará el digest de la imagen.
+
+Digest publicado en el run #27 (no se usará para desplegar):
 `sha256:782fd3afce2aadddf66b273158f5abf73600bc612641dddad23ed56dd9a1f5b0`.
 Estado: publicado con procedencia, **sin attestation de SBOM**. Causa: el paso
 `Attest SBOM` pasaba el digest dentro de `subject-name` (`...genai@sha256:...`) y no
@@ -434,6 +449,86 @@ Nuevo test de texto: ambos pasos de attestation declaran `subject-digest` y ning
 
 **Este digest no se usará para desplegar.** El despliegue (B5) utilizará el digest del
 próximo publish en el que ambas attestations terminen en verde.
+
+## Bloque B5 — Infraestructura (ajustes previos al commit)
+
+Versiones de API verificadas en la referencia oficial de Microsoft Learn (ambas
+existen y son estables, no preview): `Microsoft.App/containerApps@2025-01-01` y
+`Microsoft.App/managedEnvironments@2025-01-01`. Fuentes:
+`https://learn.microsoft.com/en-us/azure/templates/microsoft.app/2025-01-01/containerapps`
+y `https://learn.microsoft.com/en-us/azure/templates/microsoft.app/2025-01-01/managedenvironments`.
+No fue necesario cambiar las versiones del Bicep.
+
+Decisiones documentadas en el runbook (Apéndice B de `spec.md`):
+
+- **Rollback coherente con `activeRevisionsMode: Single`:** no se reactiva una revisión
+  anterior; se redespliega el último digest bueno, creando una revisión nueva. B6 seguirá
+  este enfoque. El historial de digests desplegados se registra en este `evidence.md` y en
+  el resumen del job `publish`. Consulta del digest en ejecución:
+  `az containerapp show --name ca-thehouse-genai-u2 --resource-group rg-thehouse-u2 --query properties.template.containers[0].image -o tsv`.
+- **Reaplicación del Bicep:** siempre consultar primero ese digest y pasarlo a
+  `--parameters imageDigest=...`; si se aplica otro digest se revierte la imagen sin aviso.
+- **`GENAI_API_KEY` de producción:** debe venir de un proyecto de AI Studio separado
+  (p. ej. `thehouse-genai-prod`), porque las cuotas de Gemini son por proyecto y no deben
+  compartirse con el desarrollo local ni los smoke manuales.
+
+## Actualización deliberada de pytest (hallazgo de pip-audit)
+
+Hallazgo del paso no bloqueante `Dependency audit` en `Quality gates`:
+
+```text
+pytest 8.4.2  PYSEC-2026-1845  Fix Versions: 9.0.3
+```
+
+Verificación en la fuente oficial (`https://api.osv.dev/v1/vulns/PYSEC-2026-1845`):
+`pytest has vulnerable tmpdir handling`, alias `CVE-2025-71176` / `GHSA-6w46-j5rx-g56g`.
+Afecta a pytest hasta 9.0.2 en UNIX: el patrón de directorios
+`/tmp/pytest-of-{user}` permite a usuarios locales causar denegación de servicio o
+posible escalada de privilegios. En este repositorio pytest solo corre en el runner
+efímero de GitHub (usuario único) y en la computadora local con Windows, así que el
+escenario de explotación no aplica a nuestro uso; aun así se actualiza por higiene.
+
+**No afecta a la imagen:** pytest es dependencia exclusiva de
+`[project.optional-dependencies].dev`. No está en `requirements.lock` (lock de runtime)
+y por tanto no se instala en el `Dockerfile`.
+
+Relación con el PR #12 de Dependabot: proponía ampliar `pytest<9.0` a `<10` en
+`pyproject.toml` sin regenerar los locks universales. Se cerró por ese motivo (el job
+`lock-drift` lo haría fallar). Aquí se hace la misma ampliación de forma deliberada,
+regenerando el lock con el comando de su cabecera:
+
+```text
+uv pip compile pyproject.toml --universal --generate-hashes --python-version 3.12 --extra dev -o requirements-dev.lock
+```
+
+- `pyproject.toml`: `pytest>=9.0.3,<10` (antes `>=8.3,<9.0`).
+- `requirements-dev.lock`: `pytest==9.2.0`, con hashes.
+- `requirements.lock` **no cambió**: SHA256 antes y después
+  `7A87E3665482B93D019F3F81CF3E35B26EC1D364D50441CD7B39A1B675582B82`.
+- `.venv` sincronizado con `pip install --require-hashes -r requirements-dev.lock` y
+  `pip install --no-deps -e .`: `pytest 8.4.2` → `9.2.0`. No hicieron falta cambios de
+  configuración, fixtures ni tests; los 1064 tests pasan y el único warning sigue siendo
+  el conocido `StarletteDeprecationWarning` de `TestClient`.
+
+`pip-audit==2.10.1` (versión obtenida de `https://pypi.org/pypi/pip-audit/json`)
+ejecutado contra el entorno sincronizado:
+
+```text
+No known vulnerabilities found
+Name           Skip Reason
+-------------- -----------------------------------------------------------------------------
+thehouse-genai Dependency not found on PyPI and could not be audited: thehouse-genai (0.1.0)
+PIP_AUDIT_EXIT=0
+```
+
+El paquete se instaló temporalmente en el venv solo para la auditoría y se desinstaló
+después: `ENV_RESTORED=identical_to_before` y `No broken requirements found`.
+
+Fijación de `pip-audit` en el CI aplicada en el mismo cambio: el paso `Dependency audit`
+usa ahora `python -m pip install "pip-audit==2.10.1"` (antes sin versión, lo que hacía el
+gate no reproducible). Se actualizó `test_pip_audit_step_is_present_and_non_blocking`
+para exigir la versión fijada. El step sigue siendo **no bloqueante**
+(`continue-on-error: true`) y sigue siendo el único.
 
 ## Bloques B2–B8
 

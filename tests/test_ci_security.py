@@ -36,7 +36,7 @@ def test_pip_audit_step_is_present_and_non_blocking() -> None:
 
     assert len(audit_steps) == 1
     assert "continue-on-error: true" in audit_steps[0]
-    assert "pip install pip-audit" in audit_steps[0]
+    assert 'pip install "pip-audit==2.10.1"' in audit_steps[0]
 
 
 @pytest.mark.parametrize("gate", ["Ruff", "Mypy", "Pytest"])
@@ -207,6 +207,14 @@ def test_b3_jobs_use_minimal_permissions() -> None:
         assert "id-token" not in scope
 
 
+def test_infra_job_validates_bicep_without_credentials() -> None:
+    block = _job_block(_workflow(), "infra")
+    assert "az bicep lint --file infra/genai.bicep" in block
+    assert "az bicep build --file infra/genai.bicep --stdout" in block
+    assert "az login" not in block
+    assert "contents: read" in block
+
+
 def test_publish_runs_only_on_main_after_image() -> None:
     text = _workflow()
     block = _job_block(text, "publish")
@@ -241,6 +249,7 @@ def test_attestations_are_present_and_pinned() -> None:
     assert "subject-digest: ${{ steps.push.outputs.digest }}" in block
     assert "sbom-path: sbom.spdx.json" in block
     assert block.count("push-to-registry: true") == 2
+    assert block.count("create-storage-record: false") == 2
 
 
 def _step_block(job: str, name: str) -> str:

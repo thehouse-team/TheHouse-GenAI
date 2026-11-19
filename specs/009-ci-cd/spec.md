@@ -156,3 +156,158 @@ decisiones D1–D14 están en `plan.md` y en `memoria.md`.
      visibility → Public`, y repetir la comprobación 3 antes de B5.
 - No se debe publicar un tag que no haya pasado `image` (smoke + escaneo). El paquete se
   referencia por digest en el despliegue (B5), nunca por tag.
+
+## Apéndice B — Runbook de infraestructura y OIDC (B5)
+
+Todo se ejecuta en Azure Cloud Shell, en este orden. No se despliega nada desde GitHub:
+el CI solo valida `infra/genai.bicep` con `az bicep lint` / `az bicep build` (sin
+credenciales, sin `az login`).
+
+### 1. Crear la Container App con Bicep (los secretos no entran al historial)
+
+```bash
+SUB=$(az account show --query id -o tsv)
+IMAGE='ghcr.io/thehouse-team/thehouse-genai@sha256:8b5d250ce96cd338cab3ec2c0547e8c34704c1ec13c711ed019038d79e2b9edf'
+read -rs -p 'GENAI_API_KEY: ' K_API; echo
+read -rs -p 'GENAI_SERVICE_KEY: ' K_SVC; echo
+read -rs -p 'GENAI_METRICS_KEY: ' K_MET; echo
+read -rs -p 'GENAI_SERVICE_KEY_PREVIOUS (vacío si no rotas): ' K_PREV; echo
+
+az deployment group create \
+  --resource-group rg-thehouse-u2 \
+  --template-file infra/genai.bicep \
+  --parameters imageDigest="$IMAGE" \
+               genaiApiKey="$K_API" genaiServiceKey="$K_SVC" \
+               genaiMetricsKey="$K_MET" genaiServiceKeyPrevious="$K_PREV"
+unset K_API K_SVC K_MET K_PREV
+```
+
+Las variables se introducen con `read -rs` (no se muestran ni quedan en el historial de la
+shell). Para mayor garantía frente a la lista de procesos, se puede generar un archivo de
+parámetros temporal con `umask 077` y borrarlo al terminar. Nunca se versiona un
+archivo de parámetros con secretos. El template no crea ni modifica `cae-thehouse-u2`
+(usamos `existing`) y no configura credenciales de registro: la imagen es pública en GHCR.
+
+**Proyecto de AI Studio para producción:** `GENAI_API_KEY` debe venir de un proyecto de
+AI Studio **separado** (por ejemplo `thehouse-genai-prod`). Las cuotas y límites de Gemini
+son por proyecto, así que no debe compartirse con el desarrollo local ni con los smoke
+manuales de las specs 004/011. Ese proyecto es el que usará el despliegue con
+`GENAI_BUDGET_ENABLED=true` y `GENAI_DAILY_CALL_LIMIT=400`.
+
+### 2. Identidad OIDC y rol con alcance de un solo recurso
+
+```bash
+APP=$(az ad app create --display-name thehouse-genai-gh-actions)
+APP_ID=$(echo "$APP" | jq -r .appId)          # Application (client) ID
+APP_OBJ=$(echo "$APP" | jq -r .id)            # Object ID
+TENANT=$(az account show --query tenantId -o tsv)
+
+SP_OBJ=$(az ad sp create --id "$APP_ID" --query id -o tsv)
+
+cat > /tmp/genai-fic.json <<'JSON'
+{
+  "name": "thehouse-genai-production",
+  "issuer": "https://token.actions.githubusercontent.com",
+  "subject": "repo:thehouse-team/TheHouse-GenAI:environment:production",
+  "description": "GitHub Actions production environment",
+  "audiences": ["api://AzureADTokenExchange"]
+}
+JSON
+az ad app federated-credential create --id "$APP_OBJ" --parameters /tmp/genai-fic.json
+```
+
+El `subject` debe coincidir exactamente con el `environment: production` del workflow;
+Microsoft Entra no avisa si hay un error de escritura, solo falla el intercambio de tokens.
+
+```bash
+SCOPE="/subscriptions/$SUB/resourceGroups/rg-thehouse-u2/providers/Microsoft.App/containerApps/ca-thehouse-genai-u2"
+cat > /tmp/genai-role.json <<JSON
+{
+  "Name": "TheHouse GenAI Deploy (scoped)",
+  "IsCustom": true,
+  "Description": "Update image and revisions of ca-thehouse-genai-u2 only",
+  "Actions": [
+    "Microsoft.App/containerApps/read",
+    "Microsoft.App/containerApps/write",
+    "Microsoft.App/containerApps/revisions/read",
+    "Microsoft.App/containerApps/revisions/activate/action",
+    "Microsoft.App/containerApps/revisions/deactivate/action",
+    "Microsoft.App/containerApps/revisions/restart/action",
+    "Microsoft.App/containerApps/revisions/replicas/read"
+  ],
+  "NotActions": [],
+  "AssignableScopes": ["$SCOPE"]
+}
+JSON
+az role definition create --role-definition /tmp/genai-role.json
+az role assignment create --assignee "$SP_OBJ" \
+  --role "TheHouse GenAI Deploy (scoped)" --scope "$SCOPE"
+rm -f /tmp/genai-fic.json /tmp/genai-role.json
+```
+
+Los permisos se verificaron en B0 contra la referencia oficial de permisos de Compute y la
+guía de secretos de ACA. Se excluyen `listSecrets`, `exec`, `Microsoft.Insights/*` y
+`managedEnvironments/*`. El alcance es **solo la Container App**, nunca
+`rg-thehouse-u2` (que también contiene el Backend). Si la CLI pidiera
+`Microsoft.App/managedEnvironments/read`, no ampliar el alcance: verificar en Cloud Shell
+y escalar la decisión.
+
+### 3. Variables del entorno `production` en GitHub
+
+En `Settings → Environments → production` (con aprobación requerida) crear las variables
+`AZURE_CLIENT_ID=$APP_ID`, `AZURE_TENANT_ID=$TENANT`, `AZURE_SUBSCRIPTION_ID=$SUB`. No son
+secretos, pero viven en el entorno protegido. No se crea ningún client secret.
+
+### 4. Verificación
+
+```bash
+az containerapp show --name ca-thehouse-genai-u2 --resource-group rg-thehouse-u2 \
+  --query properties.configuration.ingress.fqdn -o tsv
+az containerapp revision list --name ca-thehouse-genai-u2 --resource-group rg-thehouse-u2 \
+  --query '[].{name:name,state:properties.state,health:properties.healthState}' -o table
+```
+
+El FQDN interno debe tener el segmento `.internal.`. El tráfico HTTP interno entre apps
+del mismo entorno se resuelve por DNS de ACA (se puede llamar a
+`http://ca-thehouse-genai-u2`). Según Microsoft Learn, el proxy de ACA redirige HTTP a
+HTTPS en el puerto 80 salvo que `allowInsecure: true`; por eso el Bicep lo activa: el
+Backend llama por HTTP y el tráfico **nunca sale del entorno**. Es una decisión acotada al
+ingreso interno; el servicio no tiene endpoint externo.
+
+### 5. Rollback (coherente con `activeRevisionsMode: Single`)
+
+El Bicep fija `activeRevisionsMode: 'Single'`: no se pueden activar revisiones antiguas
+ni repartir tráfico entre ellas. El rollback consiste en **redesplegar el último digest
+conocido como bueno**, lo que crea una revisión nueva que pasa a ser la activa. El job
+`publish` ya publica cada imagen con un tag inmutable `sha-<SHA>` y escribe el digest en el
+resumen del run; `evidence.md` de la spec 009 es el historial de digests desplegados
+(con su fecha y resultado de verificación). B6 seguirá exactamente este enfoque: nunca
+reactivar una revisión anterior.
+
+Para saber qué digest está corriendo ahora:
+
+```bash
+az containerapp show --name ca-thehouse-genai-u2 --resource-group rg-thehouse-u2 \
+  --query properties.template.containers[0].image -o tsv
+```
+
+Con ese valor como `imageDigest`, reaplicar el Bicep (paso 1) crea la revisión de
+rollback. Después verificar con `az containerapp revision list ...` y las probes.
+
+### 6. Advertencia antes de cualquier reaplicación del Bicep
+
+**Siempre consultar primero el digest en ejecución** con el comando anterior y pasarlo a
+`--parameters imageDigest=...`. `infra/genai.bicep` toma la imagen como parámetro sin
+valor por defecto: si se reaplica con un digest distinto (por ejemplo el del último
+`publish`, aunque sea más reciente) se revertirá la imagen **sin aviso**. Antes de
+reaplicar: consultar digest actual, decidir si se quiere mantener o promover uno nuevo,
+y solo entonces ejecutar el deployment.
+
+### 7. Limpieza del intento fallido de App Service
+
+Si el grupo vacío `thehouse-genai_group` sigue existiendo:
+
+```bash
+az resource list --resource-group thehouse-genai_group -o table   # confirmar que está vacío
+az group delete --name thehouse-genai_group --yes --no-wait
+```

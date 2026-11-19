@@ -16,6 +16,7 @@ LOCK = REPO_ROOT / "requirements.lock"
 DEV_LOCK = REPO_ROOT / "requirements-dev.lock"
 DOCKERIGNORE = REPO_ROOT / ".dockerignore"
 DOCKERFILE = REPO_ROOT / "Dockerfile"
+BICEP = REPO_ROOT / "infra" / "genai.bicep"
 
 _PINNED = re.compile(
     r"^([A-Za-z0-9][A-Za-z0-9._-]*)(\[[A-Za-z0-9._,-]+\])?==([^\s\\;]+)"
@@ -272,6 +273,62 @@ def test_dockerfile_sets_python_runtime_flags() -> None:
     text = _dockerfile()
     assert "PYTHONDONTWRITEBYTECODE=1" in text
     assert "PYTHONUNBUFFERED=1" in text
+
+
+# --- Text checks for the Bicep template (B5) -----------------------------------------
+
+
+def _bicep() -> str:
+    return BICEP.read_text(encoding="utf-8")
+
+
+def test_bicep_references_existing_environment_and_internal_ingress() -> None:
+    text = _bicep()
+    assert "Microsoft.App/managedEnvironments@2025-01-01' existing" in text
+    assert 'name: \'cae-thehouse-u2\'' in text
+    assert "external: false" in text
+    assert "targetPort: 8000" in text
+    assert "allowInsecure: true" in text
+
+
+def test_bicep_pins_scale_resources_and_probes() -> None:
+    text = _bicep()
+    assert "minReplicas: 1" in text
+    assert "maxReplicas: 1" in text
+    assert "cpu: json('0.25')" in text
+    assert "memory: '0.5Gi'" in text
+    for probe_type in ("Startup", "Liveness", "Readiness"):
+        assert f"type: '{probe_type}'" in text
+    assert text.count("path: '/health/live'") == 2
+    assert text.count("path: '/health/ready'") == 1
+
+
+def test_bicep_secrets_are_secure_without_defaults_or_literals() -> None:
+    text = _bicep()
+    assert text.count("@secure()") == 4
+    for name in (
+        "genaiApiKey",
+        "genaiServiceKey",
+        "genaiMetricsKey",
+        "genaiServiceKeyPrevious",
+    ):
+        match = re.search(rf"param {name} string.*$", text, re.MULTILINE)
+        assert match is not None, name
+        assert "=" not in match.group(0), name
+    for env_name in ("GENAI_API_KEY", "GENAI_SERVICE_KEY", "GENAI_METRICS_KEY"):
+        match = re.search(rf"name: '{env_name}', secretRef:", text)
+        assert match is not None, env_name
+
+
+def test_bicep_image_is_a_digest_parameter_without_registry_credentials() -> None:
+    text = _bicep()
+    assert "param imageDigest string" in text
+    assert "image: imageDigest" in text
+    assert "registries:" not in text
+    assert "GENAI_PROVIDER', value: 'gemini'" in text
+    assert "GENAI_MODEL', value: 'gemini-3.5-flash-lite'" in text
+    assert "application: 'thehouse-genai'" in text
+    assert "environment: 'production'" in text
 
 
 def test_apt_packages_are_version_pinned_and_cache_cleaned() -> None:
