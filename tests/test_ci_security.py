@@ -41,9 +41,24 @@ def test_pip_audit_step_is_present_and_non_blocking() -> None:
 
 @pytest.mark.parametrize("gate", ["Ruff", "Mypy", "Pytest"])
 def test_quality_gates_remain_blocking(gate: str) -> None:
-    matching = [step for step in _steps(_workflow()) if step.startswith(gate)]
+    matching = [
+        step for step in _steps(_workflow()) if step.splitlines()[0].strip() == gate
+    ]
 
     assert len(matching) == 1
+    assert "continue-on-error" not in matching[0]
+
+
+def test_quality_typechecks_the_deployment_parser() -> None:
+    block = _job_block(_workflow(), "quality")
+    matching = [
+        step
+        for step in _steps(block)
+        if step.splitlines()[0].strip() == "Mypy strict (deployment parser)"
+    ]
+
+    assert len(matching) == 1
+    assert "mypy --strict .github/ci/revision_status.py" in matching[0]
     assert "continue-on-error" not in matching[0]
 
 
@@ -339,25 +354,21 @@ def test_deploy_uses_the_exact_digest_not_a_tag() -> None:
     assert "docker tag" not in block
 
 
+REVISION_PARSER = REPO_ROOT / ".github" / "ci" / "revision_status.py"
+
+
 def test_deploy_waits_and_verifies_the_active_revision() -> None:
     block = _job_block(_workflow(), "deploy")
     for token in (
         "attempts=24",
         "sleep_seconds=10",
         "properties.latestRevisionName",
-        "properties.active",
-        "properties.provisioningState",
-        "properties.runningState",
-        "properties.healthState",
-        "properties.replicas",
-        "properties.template.containers[0].image",
-        '"Provisioned"',
-        'Failed|Deprovisioning|Deprovisioned',
-        'Failed|Degraded',
-        '"$health" == "Unhealthy"',
-        '"$replicas" == "0"',
-        '"$health" == "Healthy"',
-        '"$image" == "$expected"',
+        "az containerapp revision show",
+        "-o json > revision.json",
+        "revision_status.py revision.json --expected",
+        '"$rc" -eq 0',
+        '"$rc" -eq 2',
+        "Fatal revision state or invalid payload",
         "**Revision:**",
         "**Digest:**",
         "**Previous image (for rollback):**",
@@ -365,11 +376,28 @@ def test_deploy_waits_and_verifies_the_active_revision() -> None:
         assert token in block, token
 
 
-def test_deploy_verification_accepts_scale_to_zero() -> None:
-    block = _job_block(_workflow(), "deploy")
-    assert '"$replicas" == "1"' not in block
-    assert '"$active" == "$expected"' not in block
-    assert '"$health" == "None"' not in block
+def test_verification_never_parses_a_multi_select_tsv_row() -> None:
+    for path in (CI_WORKFLOW, ROLLBACK_WORKFLOW):
+        text = path.read_text(encoding="utf-8")
+        assert "IFS=" not in text, path
+        assert "--query '[" not in text, path
+        assert "revision_status.py" in text, path
+        assert "-o json > revision.json" in text, path
+
+    parser = REVISION_PARSER.read_text(encoding="utf-8")
+    assert '"$replicas" == "1"' not in parser
+    assert '"$health" == "Healthy"' not in parser
+    assert "status.replicas == 0" in parser
+    assert "status.health_state == \"Healthy\"" in parser
+
+
+def test_fatal_parse_errors_abort_without_retrying() -> None:
+    for path in (CI_WORKFLOW, ROLLBACK_WORKFLOW):
+        block = path.read_text(encoding="utf-8")
+        assert 'python3 .github/ci/revision_status.py revision.json --expected' in block
+        assert '|| rc=$?' in block
+        assert 'if [[ "$rc" -eq 2 ]]' in block
+        assert "exit 1" in block
 
 
 def _rollback_workflow() -> str:
@@ -409,22 +437,14 @@ def test_rollback_uses_the_same_verification() -> None:
     for token in (
         "attempts=24",
         "properties.latestRevisionName",
-        "properties.active",
-        "properties.provisioningState",
-        "properties.runningState",
-        "properties.healthState",
-        "properties.replicas",
-        "properties.template.containers[0].image",
-        '"Provisioned"',
-        'Failed|Deprovisioning|Deprovisioned',
-        'Failed|Degraded',
-        '"$health" == "Unhealthy"',
-        '"$replicas" == "0"',
-        '"$health" == "Healthy"',
-        '"$image" == "$IMAGE_REF"',
+        "az containerapp revision show",
+        "-o json > revision.json",
+        "revision_status.py revision.json --expected \"$IMAGE_REF\"",
+        '"$rc" -eq 0',
+        '"$rc" -eq 2',
+        "**Revision:**",
     ):
         assert token in block, token
-    assert '"$replicas" == "1"' not in block
 
 
 def test_all_actions_in_both_workflows_are_pinned() -> None:

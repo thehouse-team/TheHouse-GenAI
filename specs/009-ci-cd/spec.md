@@ -218,7 +218,7 @@ cat > /tmp/genai-fic.json <<'JSON'
 {
   "name": "thehouse-genai-production",
   "issuer": "https://token.actions.githubusercontent.com",
-  "subject": "repo:thehouse-team/TheHouse-GenAI:environment:production",
+  "subject": "repo:thehouse-team@350926140/TheHouse-GenAI@1450837796:environment:production",
   "description": "GitHub Actions production environment",
   "audiences": ["api://AzureADTokenExchange"]
 }
@@ -228,6 +228,14 @@ az ad app federated-credential create --id "$APP_OBJ" --parameters /tmp/genai-fi
 
 El `subject` debe coincidir exactamente con el `environment: production` del workflow;
 Microsoft Entra no avisa si hay un error de escritura, solo falla el intercambio de tokens.
+
+**Formato real de la organización (2026-11-19):** la organización `thehouse-team` usa el
+formato con **IDs inmutables**, no el de nombres:
+`repo:thehouse-team@350926140/TheHouse-GenAI@1450837796:environment:production` (ID de
+organización 350926140, ID de repositorio 1450837796). El subject anterior con nombres
+falló el login OIDC en el primer despliegue real; se creó la federated credential
+**`github-production-ids`** con este valor y se borró la anterior. El `name` del JSON de
+arriba debe ser `github-production-ids` en la configuración actual.
 
 ```bash
 SCOPE="/subscriptions/$SUB/resourceGroups/rg-thehouse-u2/providers/Microsoft.App/containerApps/ca-thehouse-genai-u2"
@@ -271,8 +279,9 @@ En `Settings → Environments → production` (con aprobación requerida y restr
 `main`) crear las variables `AZURE_CLIENT_ID=$APP_ID`, `AZURE_TENANT_ID=$TENANT`,
 `AZURE_SUBSCRIPTION_ID=$SUB`, `AZURE_RESOURCE_GROUP=rg-thehouse-u2` y
 `AZURE_CONTAINER_APP=ca-thehouse-genai-u2`. No son secretos, pero viven en el entorno
-protegido. No se crea ningún client secret. El subject de la federated credential debe ser
-exactamente `repo:thehouse-team/TheHouse-GenAI:environment:production`.
+protegido. No se crea ningún client secret. El subject de la federated credential `github-production-ids`
+debe ser exactamente
+`repo:thehouse-team@350926140/TheHouse-GenAI@1450837796:environment:production`.
 
 ### 4. Verificación
 
@@ -291,13 +300,20 @@ devolvió 200 con el payload exacto y certificado válido. El Bicep fija
 `https://ca-thehouse-genai-u2`**. El tráfico nunca sale del entorno y el servicio no tiene
 endpoint externo.
 
-Con `minReplicas=0` una revisión sana puede estar en `0` réplicas: `runningState` es
-`Stopped` (la consola lo muestra como «Scale to 0») y `healthState` puede ser `None`. No se
-debe interpretar eso como fallo. Los valores de fallo son `provisioningState` `Failed`,
+Con `minReplicas=0` una revisión sana puede estar en `0` réplicas: el valor real observado
+el 2026-11-19 es `runningState=ScaledToZero` (el esquema REST lo documenta como `Stopped` y
+la consola como «Scale to 0»), con `healthState` `Healthy` **o nulo**; ambos son válidos. No
+se debe interpretar eso como fallo. Los valores de fallo son `provisioningState` `Failed`,
 `Deprovisioning` o `Deprovisioned`, `runningState` `Failed` o `Degraded`, y `healthState`
 `Unhealthy`. Fuente: definiciones de `RevisionProvisioningState`, `RevisionRunningState` y
 `RevisionHealthState` de la API REST de Container Apps y la guía «Update and deploy changes
 in Azure Container Apps» (estados «Scale to 0», «Failed», «Degraded»).
+
+El job `deploy` (y `rollback.yml`) no interpreta estos campos con `-o tsv`: consulta la revisión
+con `az containerapp revision show ... -o json` y pasa el archivo a
+`.github/ci/revision_status.py`, que valida la forma JSON real y falla de inmediato si falta
+o está vacío un campo obligatorio (por ejemplo la imagen). El parser, sus reglas y un JSON de
+ejemplo están cubiertos por `tests/test_revision_status.py` (sin red).
 
 ### 5. Rollback (coherente con `activeRevisionsMode: Single`)
 

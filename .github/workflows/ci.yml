@@ -42,6 +42,9 @@ jobs:
       - name: Mypy
         run: mypy src
 
+      - name: Mypy strict (deployment parser)
+        run: mypy --strict .github/ci/revision_status.py
+
       - name: Pytest
         run: pytest
 
@@ -337,36 +340,22 @@ jobs:
             --query properties.latestRevisionName -o tsv)"
 
           for attempt in $(seq 1 "$attempts"); do
-            row="$(az containerapp revision show --name "$app" --resource-group "$group" \
-              --revision "$revision" \
-              --query '[properties.active, properties.provisioningState, properties.runningState, properties.healthState, properties.replicas, properties.template.containers[0].image]' \
-              -o tsv)"
-            IFS=$'\t' read -r active provisioning running health replicas image <<< "$row"
-            replicas="${replicas:-0}"
-            echo "attempt ${attempt}/${attempts}: revision=${revision} active=${active} provisioning=${provisioning} running=${running} health=${health} replicas=${replicas} image=${image}"
-
-            failed=false
-            case "$provisioning" in Failed|Deprovisioning|Deprovisioned) failed=true ;; esac
-            case "$running" in Failed|Degraded) failed=true ;; esac
-            if [[ "$health" == "Unhealthy" ]]; then failed=true; fi
-            if [[ "$failed" == "true" ]]; then
-              echo "Revision ${revision} entered a failed state; no rollback was performed."
-              exit 1
-            fi
-
-            verified=false
-            if [[ ( "$active" == "true" || "$active" == "True" ) && "$provisioning" == "Provisioned" && "$image" == "$expected" ]]; then
-              if [[ "$replicas" == "0" ]]; then
-                verified=true
-              elif [[ "$replicas" =~ ^[1-9][0-9]*$ && "$health" == "Healthy" ]]; then
-                verified=true
-              fi
-            fi
-            if [[ "$verified" == "true" ]]; then
-              echo "VERIFIED revision=${revision} image=${image} replicas=${replicas}"
+            # JSON, never a multi-select -o tsv: knack prints one line per field,
+            # so `read` would silently capture only the first one.
+            az containerapp revision show --name "$app" --resource-group "$group" \
+              --revision "$revision" -o json > revision.json
+            echo "attempt ${attempt}/${attempts}"
+            rc=0
+            python3 .github/ci/revision_status.py revision.json --expected "$expected" || rc=$?
+            if [[ "$rc" -eq 0 ]]; then
+              echo "VERIFIED revision=${revision} image=${expected}"
               echo "**Revision:** \`${revision}\`" >> "$GITHUB_STEP_SUMMARY"
-              echo "**Verified image:** \`${image}\`" >> "$GITHUB_STEP_SUMMARY"
+              echo "**Verified image:** \`${expected}\`" >> "$GITHUB_STEP_SUMMARY"
               exit 0
+            fi
+            if [[ "$rc" -eq 2 ]]; then
+              echo "Fatal revision state or invalid payload; aborting without rollback."
+              exit 1
             fi
             sleep "$sleep_seconds"
           done

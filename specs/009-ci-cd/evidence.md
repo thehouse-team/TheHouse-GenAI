@@ -594,13 +594,14 @@ Inputs confirmados en `action.yml@v3.1.0`: `client-id`, `tenant-id` y `subscript
   `az containerapp show --query properties.template.containers[0].image -o tsv` y se escribe
   en el resumen como **Previous image (for rollback)**.
 - Verificación con 24 intentos y 10 s entre ellos (máximo ~4 min) sobre la revisión
-  `latestRevisionName`: `properties.active`, `properties.provisioningState == Provisioned`,
-  `properties.runningState` no fallido, `properties.template.containers[0].image` **exactamente**
-  el digest esperado y, solo si `properties.replicas >= 1`, `properties.healthState == Healthy`.
-  Con 0 réplicas se acepta `runningState=Stopped` y `healthState=None` (detalle y fuentes en la
-  sección «Cambios de decisión del 2026-11-19»). Falla inmediata ante estados de error.
-  El resumen del job registra revisión, digest e imagen anterior. Si falla el tiempo límite,
-  el job termina en error **sin rollback automático** y el resumen indica la imagen anterior.
+  `latestRevisionName`: se obtiene la revisión con `az containerapp revision show ... -o json`
+  y se valida con `.github/ci/revision_status.py` (detalle del primer fallo real y su
+  corrección en la sección «Primer despliegue real»). Exige revisión activa,
+  `provisioningState=Provisioned`, `runningState` no fallido e imagen **exactamente** el digest
+  esperado; solo si `replicas >= 1` exige `healthState=Healthy`. Con 0 réplicas se acepta
+  `runningState=ScaledToZero`/`Stopped` y `healthState=Healthy` o nulo. Falla inmediata ante estados de error o campos
+  ausentes/vacíos. El resumen registra revisión, digest e imagen anterior; si falla el tiempo
+  límite, el job termina en error **sin rollback automático**.
 
 ### Workflow `rollback.yml`
 
@@ -740,7 +741,7 @@ La verificación de ambos workflows exige ahora, en una sola consulta a la revis
 `properties.active`, `properties.provisioningState == Provisioned`, `properties.runningState`
 no fallido, `properties.template.containers[0].image` igual al digest esperado y, **solo si
 `properties.replicas >= 1`**, `properties.healthState == Healthy`. Con 0 réplicas se acepta
-`Stopped`/`None`. Falla inmediata si `provisioningState` es `Failed`/`Deprovisioning`/
+`ScaledToZero`/`Stopped` con `healthState` `Healthy` o nulo. Falla inmediata si `provisioningState` es `Failed`/`Deprovisioning`/
 `Deprovisioned`, `runningState` es `Failed`/`Degraded` o `healthState` es `Unhealthy`.
 Ya no se exige `properties.state == Active` ni `replicas == 1`.
 
@@ -796,6 +797,144 @@ $ git diff --check
 ```
 
 El único warning sigue siendo el `StarletteDeprecationWarning` heredado (deuda 008).
+
+## Primer despliegue real del job `deploy` en `main` (2026-11-19)
+
+### Login OIDC
+
+El primer intento de `azure/login` falló por el `subject` de la federated credential: la
+organización usa el formato con **IDs inmutables**, no el de nombres. Se creó la credencial
+**`github-production-ids`** con
+`repo:thehouse-team@350926140/TheHouse-GenAI@1450837796:environment:production` y se borró la
+anterior. Con ese valor el login OIDC funcionó. El runbook del Apéndice B de `spec.md` ya
+registra el formato real, los IDs y el nombre de la credencial. No se cambiaron permisos del
+rol (`TheHouse GenAI Deployer` sigue con sus 5 acciones sobre la Container App).
+
+### Fallo de la verificación y causa exacta
+
+`az containerapp update` se ejecutó correctamente y creó la revisión
+**`ca-thehouse-genai-u2--0000002`**. La verificación agotó los 24 intentos con este patrón:
+
+```text
+attempt 1/24: revision=ca-thehouse-genai-u2--0000002 active=true provisioning= running=
+health= replicas=0 image=
+...
+Deployment verification failed after 24 attempts.
+```
+
+No era un fallo de la app ni de permisos: el `read` funcionó (`active=true`) y el despliegue
+**sí funcionó**. El operador consultó después el estado real y la forma JSON de la revisión
+(desglosados abajo), que confirman que la revisión estaba activa, provisionada, escalada a
+cero y con la imagen correcta. La causa está en el **consumo de `-o tsv`**, no en las rutas
+JMESPath. Azure CLI usa el formateador
+`tsv` de `knack`:
+
+- `format_tsv()` convierte el resultado de un query multi-select en una lista y llama a
+  `_TsvOutput.dump()`.
+- `dump()` itera la lista y `_dump_row()` escribe `'\\n'` **por cada elemento**.
+
+Por tanto `--query '[a, b, c, ...]' -o tsv` imprime **una línea por campo**, no una fila
+tabulada. El `IFS=$'\t' read -r active provisioning ... <<< "$row"` capturaba solo la primera
+línea (`active=true`) y dejaba el resto vacío; `replicas` aparecía como 0 por el valor por
+defecto del propio script. Fuentes verificadas:
+https://github.com/microsoft/knack/blob/master/knack/output.py (`format_tsv`, líneas 84-87;
+`_TsvOutput.dump`, 261-268; `_dump_row`, 232-258) y
+https://github.com/Azure/azure-cli/blob/main/src/azure-cli/azure/cli/command_modules/containerapp/_clients.py
+(`show_revision` devuelve el JSON ARM sin proyectar, línea 318 en adelante), además del
+esquema REST de revisiones ya citado. Las rutas `properties.*` y
+`properties.template.containers[0].image` son correctas; el fallo era exclusivamente la
+lectura de la salida `tsv`.
+
+### Estado real y forma JSON consultados por el operador (2026-11-19)
+
+```text
+Revision ca-thehouse-genai-u2--0000002 | Activa True | Aprov Provisioned |
+Estado ScaledToZero | Salud Healthy | Replicas 0 |
+Imagen ghcr.io/thehouse-team/thehouse-genai@sha256:bb106ef6ad5db6e460f88f7f004c7cfb4844034e8c1e5547a80366da60c64447
+```
+
+Segundo caso real observado el 2026-11-19 (revisión ya activa con 1 réplica):
+
+```text
+ca-thehouse-genai-u2--okuxih9  True  Healthy  RunningAtMaxScale  1
+```
+
+Forma real de `az containerapp revision show` (claves de primer nivel y de `properties`):
+
+```text
+raiz: ['id', 'name', 'properties', 'resourceGroup', 'type']
+properties: ['active', 'createdTime', 'fqdn', 'healthState', 'provisioningState',
+'replicas', 'runningState', 'template', 'trafficWeight']
+```
+
+La forma JSON coincide con el esquema ARM. Enumeraciones **exactas del swagger oficial**
+`Microsoft.App/ContainerApps/stable/2025-01-01/ContainerAppsRevisions.json`
+(https://github.com/Azure/azure-rest-api-specs/blob/main/specification/app/resource-manager/Microsoft.App/ContainerApps/stable/2025-01-01/ContainerAppsRevisions.json):
+
+- `RevisionHealthState`: `Healthy`, `Unhealthy`, `None`.
+- `RevisionProvisioningState`: `Provisioning`, `Provisioned`, `Failed`, `Deprovisioning`,
+  `Deprovisioned`.
+- `RevisionRunningState`: `Running`, `Processing`, `Stopped`, `Degraded`, `Failed`, `Unknown`.
+
+El servicio emite además valores que el swagger no enumera, equivalentes a las etiquetas de
+la guía «Update and deploy changes in Azure Container Apps»: **`ScaledToZero`** («Scale to
+0», 0 réplicas) y **`RunningAtMaxScale`** («Running (at max)», 1 réplica), ambos observados
+en producción. El parser los acepta como estados listos junto a `Stopped` y `Running`. Con
+0 réplicas, `healthState` puede ser `Healthy` (caso real) o nulo; ambos son válidos.
+
+Clasificación explícita implementada en `revision_status.py` (swagger citado + valores
+reales de producción + etiquetas normalizadas de la guía oficial):
+
+| Campo | Válido / listo | Esperar (reintento) | Fatal (abortar) |
+| --- | --- | --- | --- |
+| `provisioningState` | `Provisioned` | `Provisioning` | `Failed`, `Deprovisioning`, `Deprovisioned` |
+| `runningState` (0 réplicas) | `ScaledToZero`, `Stopped` | `Activating`, `Unknown` | `Failed`, `Degraded`, `ActivationFailed` |
+| `runningState` (>=1 réplica) | `Running`, `RunningAtMaxScale` | `Provisioning`, `Processing`, `Scaling`, `Unknown` | `Failed`, `Degraded`, `ActivationFailed` |
+| `healthState` | `Healthy`, `None` (solo con 0 réplicas) | — | `Unhealthy` |
+
+Cualquier valor fuera de estos conjuntos se considera inesperado y aborta con mensaje claro.
+
+### Corrección
+
+- `ci.yml` y `rollback.yml` obtienen la revisión con
+  `az containerapp revision show ... -o json > revision.json` (sin `--query` multi-select) y
+  pasan el archivo a `.github/ci/revision_status.py --expected <digest>`.
+- El parser (stdlib, sin red ni secretos) valida que `name`, `properties.active`,
+  `provisioningState`, `runningState`, `replicas` y `template.containers[0].image` existan y
+  tengan el tipo correcto, y clasifica cada estado con los conjuntos de la tabla anterior.
+  Con 0 réplicas, `healthState` `Healthy` o nulo son válidos. Cualquier campo vacío, nulo o
+  con valor inesperado (por ejemplo la imagen) produce **FATAL con mensaje claro** y sale con
+  código 2: el job aborta en el mismo intento, sin confundirlo con una espera.
+- Códigos: `0` verificado, `1` aún no listo (reintenta), `2` fatal (JSON inválido, campo
+  obligatorio ausente, valor inesperado o estado fallido).
+- `tests/test_revision_status.py`: 25 tests sin red alimentan el parser con un JSON de ejemplo
+  con la forma ARM real (sin secretos). Incluyen un test con **exactamente** el caso real
+  (`Provisioned`, `ScaledToZero`, `Healthy`, 0 réplicas y el digest `bb106ef6…`) que devuelve
+  código 0, parametrización de `healthState` `Healthy`/nulo, clasificación de los 12 valores
+  de `runningState`, ambos casos reales y campos vacíos/inesperados. `tests/test_ci_security.py` comprueba que
+  ambos workflows usan el parser, que no queda `IFS=` ni `--query '[` y que el código 2 aborta.
+- `.github/ci/revision_status.py` está fuera de `src/`, que es lo que revisa `mypy src`, así
+  que se añadió al job `quality` el paso bloqueante `mypy --strict .github/ci/revision_status.py`.
+  No existe hoy un chequeo equivalente para `scripts/smoke_parse_search.py` en el CI.
+
+### Gates tras la corrección
+
+```text
+$ .venv\Scripts\python.exe -m ruff check .
+All checks passed!
+
+$ .venv\Scripts\python.exe -m mypy src
+Success: no issues found in 36 source files
+
+$ .venv\Scripts\python.exe -m mypy --strict .github/ci/revision_status.py
+Success: no issues found in 1 source file
+
+$ .venv\Scripts\python.exe -m pytest
+1109 passed, 1 warning in 11.70s
+
+$ git diff --check
+(sin salida, código 0)
+```
 
 ## Bloques B2–B8
 
