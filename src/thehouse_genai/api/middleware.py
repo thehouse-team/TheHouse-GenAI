@@ -140,12 +140,21 @@ class RequestContextMiddleware:
                 path=path,
                 status_class=_metric_status_class(status_code),
             )
-            logger.info(
+            # Probes run every few seconds. Keep their successful access lines at DEBUG
+            # so INFO logs stay usable, but never hide failed health requests.
+            raw_path = scope.get("path", "")
+            log_level = (
+                logging.DEBUG
+                if raw_path.startswith("/health/") and status_code == 200
+                else logging.INFO
+            )
+            logger.log(
+                log_level,
                 "http.request.completed",
                 extra={
                     "request_id": request_id,
                     "method": scope.get("method", ""),
-                    "path": _PATH_ID_PATTERN.sub("{id}", scope.get("path", "")),
+                    "path": _PATH_ID_PATTERN.sub("{id}", raw_path),
                     "status_code": status_code,
                     "duration_ms": duration_ms,
                 },
