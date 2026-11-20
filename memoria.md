@@ -1,6 +1,6 @@
 # Memoria del proyecto — TheHouse GenAI
 
-Última actualización: 2026-11-18
+Última actualización: 2026-11-19
 
 ## Identidad
 
@@ -426,12 +426,12 @@ seguridad D14 se aplican en los bloques B0–B8 de `specs/009-ci-cd/plan.md`.
 | D5 | Un único entorno protegido de GitHub: `production`. Sin entorno `staging` separado. |
 | D6 | La infraestructura se define en Bicep y el usuario la aplica manualmente desde Azure Cloud Shell; el CI **solo** actualiza la imagen y gestiona revisiones. |
 | D7 | Nombre de la Container App: `ca-thehouse-genai-u2`, en `cae-thehouse-u2`, `rg-thehouse-u2`, East US 2. |
-| D8 | `minReplicas=1`, `maxReplicas=1`, 0.25 vCPU / 0.5 GiB, igual que el Backend. Evita arranque en frío frente al timeout de 8 s y mantiene globales el rate limit, el presupuesto y las métricas por proceso. |
+| D8 | Originalmente `minReplicas=1`; **sustituido el 2026-11-19** por la política de costo $0: `minReplicas=0`, `maxReplicas=1`, regla HTTP de 10 concurrentes, `cooldownPeriod=300` y `pollingInterval=30`. Se mantiene 0.25 vCPU / 0.5 GiB. El arranque en frío se cubre con el fallback y el timeout de 6 s frente a los 8 s del Backend. |
 | D9 | Secretos directos de Container Apps para las tres claves (`GENAI_SERVICE_KEY`, `GENAI_METRICS_KEY`, `GENAI_API_KEY`) y la clave anterior durante rotación. Sin Key Vault en esta spec. |
 | D10 | El CI **no** obtiene lectura de Log Analytics: el workspace contiene también los logs del Backend. El gating usa únicamente estado de revisión, réplicas y probes de ACA. |
 | D11 | Verificación puntual con `az containerapp exec` **dentro del contenedor de GenAI**, llamando a `localhost:8000` con Python; no se toca el contenedor del Backend. La E2E de red Backend → GenAI queda en la spec 010 (G09). |
 | D12 | HSTS fuera de la aplicación: se documenta como responsabilidad del borde (ACA/gateway). CSP sigue fuera por D9 de 005. El header `Server` se suprime en el `CMD` de uvicorn con `--no-server-header`. |
-| D13 | Proveedor de capa gratuita, modelo `gemini-3.5-flash-lite`, 400 llamadas/día y coste 0 en las tarifas configuradas. Deuda: crear proyecto de pago con tope de gasto antes de la demo con datos reales. |
+| D13 | Proveedor de capa gratuita, modelo `gemini-3.5-flash-lite`, coste 0. **Se mantiene la capa gratuita** por la política de costo $0; derogada la recomendación de crear un proyecto de pago con tope de gasto. El límite real es de Gemini (500 RPD); el cupo local de 400 deja de ser exacto porque el estado se reinicia al escalar a 0. |
 | D14 | **Ajuste de seguridad obligatorio:** la asignación de rol de la identidad OIDC tiene alcance **solo sobre el recurso** `ca-thehouse-genai-u2`, nunca sobre `rg-thehouse-u2` ni la suscripción, porque el grupo contiene también el Backend. Se usa un rol personalizado sin `listSecrets` en lugar de `Container Apps Contributor`, cuyos comodines `Microsoft.App/containerApps/*/action` conceden lectura de secretos en texto plano. Fuentes oficiales: `https://learn.microsoft.com/en-us/azure/role-based-access-control/permissions/compute` y `https://learn.microsoft.com/en-us/azure/container-apps/manage-secrets`. |
 
 La verificación del rol se reforzó contra la documentación oficial: los permisos mínimos
@@ -443,6 +443,31 @@ que un rol asignado sobre esa app cubre también su lectura y gestión. `exec` n
 al CI: la decisión D11 la ejecuta el usuario manualmente. Si Azure exigiera además
 `Microsoft.App/managedEnvironments/read` para `az containerapp update`, no se ampliará el
 alcance por iniciativa propia: se verifica en Cloud Shell durante B4 y se escala al usuario.
+
+Hecho registrado el 2026-11-19: el operador aplicó la infraestructura manualmente con
+`infra/genai.bicep` (what-if 1 create / 6 ignore) y creó `ca-thehouse-genai-u2` con ingreso
+interno, revisión `okuxih9` Active/Healthy y el digest
+`sha256:6411108f02043659bde838c1ae48362e3e9f5ed8ee33b59d08adc16939a9aa71` (CI #31). El rol
+efectivo es `TheHouse GenAI Deployer` con **5** acciones (sin activate/deactivate, sin
+listSecrets, sin delete), asignado solo sobre la Container App. El entorno `production` tiene
+aprobación requerida, está restringido a `main` y cinco variables `AZURE_*`. El detalle y las
+pruebas `exec` están en `specs/009-ci-cd/evidence.md`.
+
+Decisiones adicionales de B6:
+
+| # | Decisión |
+| --- | --- |
+| D15 | `azure/login` se fija por SHA verificado de la release oficial v3.1.0 (`a641126d1b8aa4d1fa005f4f92df94a3a4c4c906`), obtenido del tag anotado en la API de GitHub; mismo criterio D3. |
+| D16 | El job `deploy` valida que el output de `publish` sea un `sha256:<64 hex>` desnudo y despliega `ghcr.io/thehouse-team/thehouse-genai@<digest>`; nunca un tag. Antes de actualizar guarda la imagen activa en el resumen para rollback. |
+| D17 | La verificación usa 24 intentos con 10 s de espera (≈4 min), exige revisión `Active`, `Healthy`, 1 réplica y digest exacto. No hay rollback automático: si falla, se reporta y se usa el workflow manual. |
+| D18 | El rollback es un `workflow_dispatch` con validación estricta del formato de la imagen, mismo entorno protegido y misma verificación; coherente con `activeRevisionsMode: Single`. |
+| D19 | No se amplía el rol ante un error de la CLI: se documenta el mensaje exacto y la acción faltante en `evidence.md` para que el operador la agregue de forma explícita. |
+| D20 | Los `http.request.completed` de `/health/*` con 200 pasan a DEBUG (≈17.000 líneas/día menos); los errores siguen en INFO y las métricas no cambian. Cambio lógico separado, ya commiteado como `c13d3de`. |
+| D21 | Política de costo $0: `minReplicas=0`, `maxReplicas=1` y regla HTTP explícita `concurrentRequests: '10'` con `cooldownPeriod=300` y `pollingInterval=30`. El operador aplicó `--min-replicas 0` el 2026-11-19 y el Bicep queda alineado. |
+| D22 | El gating de `deploy` y `rollback` tolera 0 réplicas: revisión activa, `provisioningState=Provisioned`, `runningState` no fallido y digest exacto; `healthState=Healthy` solo con ≥1 réplica. Enums verificados en la API REST de revisiones (`Stopped`, `None`, `Failed`, `Degraded`). |
+| D23 | HTTPS interno verificado el 2026-11-19 (200, payload exacto, certificado válido): `allowInsecure: false` en el Bicep y el Backend llamará a `https://ca-thehouse-genai-u2`. |
+| D24 | Reaplicar el Bicep solo con el digest en ejecución, secretos del gestor de contraseñas y what-if previo; cambios esperados solo en `ingress.allowInsecure` y `template.scale`. |
+| D25 | Gemini permanece en capa gratuita: Google puede usar el contenido enviado, por lo que la redacción de PII de 005 se aplica antes del envío. Derogadas las recomendaciones de proyecto de pago de 011/D-8 y deuda 004-(b). |
 
 ## Evidencia resumida
 

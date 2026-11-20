@@ -62,17 +62,23 @@
 
 ## B5 — Configuración ACA
 
-- [ ] Ingreso interno, puerto 8000, 0.25 vCPU / 0.5 GiB, min=max=1.
+- [x] Ingreso interno HTTPS, puerto 8000, 0.25 vCPU / 0.5 GiB, min=0 / max=1 con regla
+      HTTP explícita de 10 concurrentes (política de costo $0, 2026-11-19).
 - [ ] Probes liveness, readiness y startup.
 - [ ] Secretos de ACA y variables de producción con D13.
 - [ ] Diagnostic settings a `log-thehouse-u2` y alertas sin acceso del CI a logs.
 
 ## B6 — Verificación y rollback
 
-- [ ] Gating por estado de revisión, réplicas y probes.
-- [ ] Verificación controlada con `exec` dentro de GenAI contra `localhost:8000`.
-- [ ] Job y runbook de rollback redesplegando el último digest bueno (no reactivar una
-      revisión: `activeRevisionsMode` es `Single`), con prueba registrada.
+- [x] Gating por estado de revisión, réplicas y probes (job `deploy`, 24 intentos / 10 s).
+- [x] Verificación controlada con `exec` dentro de GenAI contra `localhost:8000`, ejecutada
+      por el operador (explain-match, parse-search y 401 sin clave).
+- [x] Workflow y runbook de rollback redesplegando el último digest bueno (no reactivar una
+      revisión: `activeRevisionsMode` es `Single`), con validación de formato y aprobación.
+- [ ] Prueba real del rollback pendiente: ejecutar `rollback.yml` con el digest
+      `sha256:6411108f02043659bde838c1ae48362e3e9f5ed8ee33b59d08adc16939a9aa71`.
+- [x] Mejora operativa: `http.request.completed` de `/health/*` con 200 bajado a DEBUG,
+      errores y métricas conservados, con tests.
 
 ## B7 — Borde HTTP
 

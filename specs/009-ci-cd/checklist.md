@@ -18,25 +18,29 @@
 - [x] PR construye y escanea sin publicar; `main` publica por SHA y digest con SBOM.
 - [x] Acciones fijadas por SHA de release oficial, sin valores de memoria.
 - [x] Deriva de locks verificada en CI y Dependabot con tres ecosistemas y cooldown de 7 días.
-- [ ] OIDC con rol personalizado de alcance único y sin `listSecrets`.
-- [ ] Bicep aplicado manualmente; CI solo imagen y revisiones.
-- [ ] Ingreso interno, una réplica, probes, secretos y variables verificados.
-- [ ] Gating por revisión/probes y verificación `exec` documentada.
-- [ ] Rollback por revisión probado y registrado.
+- [x] OIDC con rol personalizado `TheHouse GenAI Deployer`, 5 acciones, alcance único y sin
+      `listSecrets`, `delete` ni activate/deactivate.
+- [x] Bicep aplicado manualmente por el operador; CI solo imagen y revisiones.
+- [x] Ingreso interno HTTPS (allowInsecure false), escalado 0→1 con regla HTTP, probes,
+      secretos y variables verificados.
+- [x] Gating por revisión/probes implementado y verificación `exec` documentada y ejecutada.
+- [ ] Rollback probado una vez con el digest bueno (workflow listo; prueba real pendiente).
 
 ## Seguridad
 
-- [ ] Sin secretos, API keys, tokens ni PII en código, YAML, imagen, logs ni documentación.
-- [ ] Sin acceso del CI a Log Analytics ni al contenedor del Backend.
-- [ ] Sin ingress externo, aunque sea temporal.
-- [ ] HSTS en el borde y `Server` suprimido por `--no-server-header`.
-- [ ] Permisos mínimos y sin comodines `Microsoft.App/containerApps/*/action`.
+- [x] Sin secretos, API keys, tokens ni PII en código, YAML, imagen, logs ni documentación.
+- [x] Sin acceso del CI a Log Analytics ni al contenedor del Backend.
+- [x] Sin ingress externo, aunque sea temporal.
+- [x] HSTS en el borde y `Server` suprimido por `--no-server-header`.
+- [x] Permisos mínimos y sin comodines `Microsoft.App/containerApps/*/action`; posibles
+      permisos adicionales documentados en `evidence.md` sin ampliar el rol.
 
 ## SDD y calidad
 
-- [ ] `spec.md`, `plan.md`, `task.md`, `checklist.md` y `evidence.md` actualizados.
-- [ ] `ruff check .` sin hallazgos.
-- [ ] `mypy src` sin errores.
-- [ ] `pytest` en verde y sin red.
-- [ ] `git diff --check` limpio.
-- [ ] Evidencia registrada antes de marcar IMPLEMENTED.
+- [x] `spec.md`, `plan.md`, `task.md`, `checklist.md` y `evidence.md` actualizados.
+- [x] `ruff check .` sin hallazgos.
+- [x] `mypy src` sin errores.
+- [x] `pytest` en verde y sin red (1080 tests).
+- [x] `git diff --check` limpio.
+- [ ] Evidencia registrada antes de marcar IMPLEMENTED (falta la prueba real del rollback y
+      del gating automático en el primer push a `main`).

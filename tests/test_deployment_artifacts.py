@@ -288,19 +288,30 @@ def test_bicep_references_existing_environment_and_internal_ingress() -> None:
     assert 'name: \'cae-thehouse-u2\'' in text
     assert "external: false" in text
     assert "targetPort: 8000" in text
-    assert "allowInsecure: true" in text
+    assert "allowInsecure: false" in text
+    assert "allowInsecure: true" not in text
 
 
 def test_bicep_pins_scale_resources_and_probes() -> None:
     text = _bicep()
-    assert "minReplicas: 1" in text
+    assert "minReplicas: 0" in text
     assert "maxReplicas: 1" in text
+    assert "cooldownPeriod: 300" in text
+    assert "pollingInterval: 30" in text
     assert "cpu: json('0.25')" in text
     assert "memory: '0.5Gi'" in text
     for probe_type in ("Startup", "Liveness", "Readiness"):
         assert f"type: '{probe_type}'" in text
     assert text.count("path: '/health/live'") == 2
     assert text.count("path: '/health/ready'") == 1
+
+
+def test_bicep_has_one_explicit_http_scale_rule() -> None:
+    text = _bicep()
+    assert text.count("name: 'http-concurrency'") == 1
+    assert text.count("http: {") == 1
+    assert "concurrentRequests: '10'" in text
+    assert text.count("rules: [") == 1
 
 
 def test_bicep_secrets_are_secure_without_defaults_or_literals() -> None:

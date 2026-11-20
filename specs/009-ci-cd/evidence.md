@@ -530,6 +530,273 @@ gate no reproducible). Se actualizó `test_pip_audit_step_is_present_and_non_blo
 para exigir la versión fijada. El step sigue siendo **no bloqueante**
 (`continue-on-error: true`) y sigue siendo el único.
 
+## Aplicación manual de la infraestructura por el operador (2026-11-19)
+
+El operador aplicó la infraestructura desde Azure Cloud Shell; el CI no participó en esta
+fase (D6). Hechos comunicados y registrados tal cual:
+
+- `az deployment group what-if` con `infra/genai.bicep`: **1 create, 6 ignore**, sin cambios
+  al Backend ni al entorno `cae-thehouse-u2`. No se creó ni modificó ningún recurso ajeno.
+- Container App **`ca-thehouse-genai-u2`** creada con `infra/genai.bicep`.
+  Revisión **`ca-thehouse-genai-u2--okuxih9`**: `Active`, `Healthy`,
+  `RunningAtMaxScale` (1/1). Ingreso externo **`False`**. FQDN interno:
+  `ca-thehouse-genai-u2.internal.grayisland-cb722b5f.eastus2.azurecontainerapps.io`
+  (contiene el segmento `.internal.`).
+- Imagen desplegada:
+  `ghcr.io/thehouse-team/thehouse-genai@sha256:6411108f02043659bde838c1ae48362e3e9f5ed8ee33b59d08adc16939a9aa71`
+  (CI **#31**, con procedencia y SBOM firmados). Este es el digest bueno conocido que debe
+  usarse como entrada del workflow de rollback si una promoción posterior falla.
+- Verificación puntual con `az containerapp exec` **dentro del contenedor de GenAI**, contra
+  `localhost:8000`: `explain-match` **200** con `generated=true` (prompt `explain_match_v3`);
+  `parse-search` **200** con `generated=true` y `confidence=high` (`maxBudget` 3000, `MXN`,
+  `UTTT`, `internet`, `maxDistanceKm` 2); sin clave de servicio **401**. No se tocó el
+  contenedor del Backend (D11).
+- La clave de Gemini de producción está en un proyecto de AI Studio **separado**. Las claves
+  de servicio y de métricas se generaron en Cloud Shell, se guardaron fuera del repositorio
+  y se borraron de la sesión al terminar. No hay secretos versionados.
+- **OIDC:** App Registration `thehouse-genai-gh-actions`; federated credential con subject
+  `repo:thehouse-team/TheHouse-GenAI:environment:production`. Rol personalizado
+  **`TheHouse GenAI Deployer`** con **solo 5 acciones**:
+  `Microsoft.App/containerApps/read`, `Microsoft.App/containerApps/write`,
+  `Microsoft.App/containerApps/revisions/read`,
+  `Microsoft.App/containerApps/revisions/restart/action` y
+  `Microsoft.App/containerApps/revisions/replicas/read`. No incluye
+  `revisions/activate/action` ni `revisions/deactivate/action` (el modo es `Single` y el
+  rollback es por redespliegue), ni `listSecrets` ni `delete`. Asignado **solo** sobre
+  `ca-thehouse-genai-u2`. El runbook del Apéndice B de `spec.md` se actualizó para reflejar
+  este conjunto exacto y el nuevo nombre del rol.
+- Entorno **`production`** en GitHub con aprobación requerida, restringido a `main`, con
+  variables `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`,
+  `AZURE_RESOURCE_GROUP` y `AZURE_CONTAINER_APP` (no son secretos).
+- El grupo vacío `thehouse-genai_group` del intento fallido de App Service se revisó
+  (sin recursos) y se borró.
+
+## Bloque B6 — Despliegue continuo con aprobación y rollback
+
+### Acción fijada por SHA
+
+| Acción | Versión | SHA del commit (40 hex) | Fuente |
+| --- | --- | --- | --- |
+| `azure/login` | v3.1.0 | `a641126d1b8aa4d1fa005f4f92df94a3a4c4c906` | `GET /repos/Azure/login/releases/latest` → tag `v3.1.0` (publicado 2026-09-10); `git/ref/tags/v3.1.0` → tag anotado `053f7285eb20bf5469ef084617b0b24d3cec53fc`; `git/tags/053f7285…` → commit `a641126d…`. Release: https://github.com/Azure/login/releases/tag/v3.1.0 |
+
+Inputs confirmados en `action.yml@v3.1.0`: `client-id`, `tenant-id` y `subscription-id`
+(audience OIDC por defecto `api://AzureADTokenExchange`). Ningún valor escrito de memoria.
+
+### Job `deploy` en `ci.yml`
+
+- Solo en `push` a `main`, `needs: publish`, `environment: production`,
+  `permissions: contents: read` + `id-token: write` (exactamente dos). Sin checkout ni
+  secretos: la autenticación es OIDC con las cinco variables del entorno protegido.
+- Despliega `ghcr.io/thehouse-team/thehouse-genai@${DIGEST}` donde `DIGEST` es
+  `needs.publish.outputs.digest`, validado antes contra `^sha256:[0-9a-f]{64}$`.
+  Se usa `az containerapp update --image "$image"`, nunca un tag ni `:latest`.
+- Antes de actualizar se lee la imagen activa con
+  `az containerapp show --query properties.template.containers[0].image -o tsv` y se escribe
+  en el resumen como **Previous image (for rollback)**.
+- Verificación con 24 intentos y 10 s entre ellos (máximo ~4 min) sobre la revisión
+  `latestRevisionName`: `properties.active`, `properties.provisioningState == Provisioned`,
+  `properties.runningState` no fallido, `properties.template.containers[0].image` **exactamente**
+  el digest esperado y, solo si `properties.replicas >= 1`, `properties.healthState == Healthy`.
+  Con 0 réplicas se acepta `runningState=Stopped` y `healthState=None` (detalle y fuentes en la
+  sección «Cambios de decisión del 2026-11-19»). Falla inmediata ante estados de error.
+  El resumen del job registra revisión, digest e imagen anterior. Si falla el tiempo límite,
+  el job termina en error **sin rollback automático** y el resumen indica la imagen anterior.
+
+### Workflow `rollback.yml`
+
+- `workflow_dispatch` con input obligatorio `image_digest`, validado contra
+  `^ghcr\.io/thehouse-team/thehouse-genai@sha256:[0-9a-f]{64}$` antes de cualquier llamada
+  a Azure.
+- Mismo entorno protegido `production` (aprobación requerida), mismos permisos
+  (`contents: read`, `id-token: write`) y misma acción `azure/login` fijada por SHA.
+- Rechaza el rollback si el digest solicitado ya es la imagen activa; redespliega con
+  `az containerapp update --image "$IMAGE_REF"` y aplica la misma verificación (activa,
+  provisionada, no fallida, digest exacto y Healthy solo con réplicas). Coherente con
+  `activeRevisionsMode: Single`: nunca activa una revisión antigua.
+
+### Si el CLI pidiera permisos adicionales (no ampliados)
+
+No se amplió el rol ni se usó Contributor. Si una ejecución real devuelve cualquiera de
+estos errores, la acción faltante debe ser agregada **explícitamente** por el operador:
+
+- `The client '...' does not have authorization to perform action
+  'Microsoft.App/managedEnvironments/read' over scope
+  '/subscriptions/<sub>/resourceGroups/rg-thehouse-u2/providers/Microsoft.App/managedEnvironments/cae-thehouse-u2'`.
+  Acción requerida: `Microsoft.App/managedEnvironments/read` sobre ese entorno. Es la
+  incidencia ya anticipada en D14; afectaría a `az containerapp update` y a
+  `az containerapp show`.
+- `... does not have authorization to perform action
+  'Microsoft.App/containerApps/revisions/read' ...`. Acción ya incluida en el rol; si
+  aparece, comprobar la propagación de la asignación y el `environment: production`
+  correcto, no ampliar el rol.
+- `... does not have authorization to perform action
+  'Microsoft.App/containerApps/write' ...`. Acción ya incluida; comprobar que la
+  asignación esté sobre `ca-thehouse-genai-u2` y no sobre otro recurso.
+
+En ningún caso se concederán comodines `Microsoft.App/containerApps/*/action`,
+`listSecrets`, permisos sobre `rg-thehouse-u2` ni el rol `Contributor`/`Container Apps
+Contributor`.
+
+### Mejora operativa de logging (cambio lógico separado, sin commit)
+
+Los probes `/health/live` y `/health/ready` se ejecutan cada 5 s (≈17.000 líneas/día).
+`RequestContextMiddleware` emite ahora `http.request.completed` en `DEBUG` solo cuando la
+ruta empieza por `/health/` y el estado es **200**. Las respuestas no saludables de esas
+mismas rutas y todas las demás rutas siguen en `INFO`, de modo que los errores no se
+ocultan. Las métricas no cambian: los probes siguen contándose en `http_requests_total` y
+en el histograma de latencia. `tests/test_health_access_logs.py` cubre ambos probes, una
+ruta no health, un probe forzado a 500 y la continuidad de las métricas.
+
+### Pruebas de texto nuevas
+
+En `tests/test_ci_security.py`: deploy solo en `main` y `needs: publish`, entorno
+`production`, permisos exactos, login OIDC fijado por SHA con las cinco variables,
+despliegue por `@sha256` sin tag, espera/verificación de revisión, digest e imagen anterior,
+workflow de rollback con validación de formato y entorno, y comprobación de que **todas**
+las acciones de ambos workflows están fijadas por SHA de 40 hex.
+
+### Salidas reales de los gates (2026-11-19)
+
+```text
+$ .venv\Scripts\python.exe -m ruff check .
+All checks passed!
+
+$ .venv\Scripts\python.exe -m mypy src
+Success: no issues found in 36 source files
+
+$ .venv\Scripts\python.exe -m pytest
+1080 passed, 1 warning in 18.47s
+
+$ .venv\Scripts\python.exe -c "import yaml,pathlib; ..."
+.github/workflows/ci.yml OK ['quality', 'lock-drift', 'infra', 'image', 'publish', 'deploy']
+.github/workflows/rollback.yml OK ['rollback']
+```
+
+El único warning es el conocido `StarletteDeprecationWarning` de `TestClient` con `httpx`
+(deuda 008). Un fallo intermedio del nuevo test de logging (el ASGI mínimo no atendía
+`lifespan` bajo `TestClient`) se corrigió implementando `lifespan.startup.complete` y
+`lifespan.shutdown.complete`; los 5 tests del archivo pasan.
+
+## Cambios de decisión del 2026-11-19 (acordados con el equipo, antes del commit)
+
+Se registran aquí las cinco decisiones acordadas (D21–D25, también en `plan.md` y
+`memoria.md`). El SHA de `azure/login` v3.1.0
+`a641126d1b8aa4d1fa005f4f92df94a3a4c4c906` fue reconfirmado por el usuario.
+
+### a) Política de costo $0: escalado a cero
+
+- El operador aplicó el 2026-11-19 `az containerapp update --min-replicas 0` sobre
+  `ca-thehouse-genai-u2`. Resultado observado: `minReplicas 0`, `maxReplicas 1`,
+  `cooldownPeriod 300`, `pollingInterval 30`, `rules null` (antes de añadir la regla en Bicep).
+- `infra/genai.bicep` queda con `minReplicas: 0`, `maxReplicas: 1`, `cooldownPeriod: 300`,
+  `pollingInterval: 30` y una regla HTTP explícita:
+
+  ```bicep
+  rules: [
+    {
+      name: 'http-concurrency'
+      http: {
+        metadata: {
+          concurrentRequests: '10'
+        }
+      }
+    }
+  ]
+  ```
+
+  Formato verificado en la referencia oficial de `Microsoft.App/containerApps@2025-01-01`
+  (https://learn.microsoft.com/en-us/azure/templates/microsoft.app/2025-01-01/containerapps)
+  y en «Scaling in Azure Container Apps» (https://learn.microsoft.com/en-us/azure/container-apps/scale-app):
+  la regla es `rules[].http.metadata.concurrentRequests`, con valor por defecto 10 (mínimo 1).
+  Se elige **10** por ser el valor documentado por defecto y suficiente para el único cliente
+  legítimo (Backend, timeout de 8 s). Con `maxReplicas=1`, el exceso se encola en el ingress.
+- Consecuencias documentadas en el runbook (Apéndice B, sección 6b) del `spec.md`:
+  **arranque en frío** cubierto por el fallback `generated=false` y el timeout de 6 s de
+  GenAI frente a los 8 s del Backend; y **reinicio del estado en memoria** (presupuesto
+  diario, rate limit y métricas) al escalar a 0, por lo que el tope local de 400 llamadas/día
+  deja de ser exacto. El límite efectivo lo pone Gemini en capa gratuita: **500 RPD**
+  (~15 RPM y 250K TPM por proyecto de AI Studio). Deuda 007-(a) queda agravada y documentada.
+- Tests: `test_bicep_pins_scale_resources_and_probes` ahora exige `minReplicas: 0`,
+  `cooldownPeriod: 300` y `pollingInterval: 30`; nuevo
+  `test_bicep_has_one_explicit_http_scale_rule` comprueba una sola regla HTTP con
+  `concurrentRequests: '10'`.
+
+### b) Verificación tolerante a 0 réplicas en `deploy` y `rollback`
+
+Con `minReplicas=0`, justo después de desplegar la revisión nueva puede estar en 0 réplicas y
+`healthState` no ser `Healthy`. Se consultó la documentación oficial:
+
+- Definiciones de la API REST de Container Apps (Get Revision): `RevisionProvisioningState` =
+  `Provisioning | Provisioned | Failed | Deprovisioning | Deprovisioned`;
+  `RevisionRunningState` = `Running | Processing | Stopped | Degraded | Failed | Unknown`;
+  `RevisionHealthState` = `Healthy | Unhealthy | None`. Fuente:
+  https://learn.microsoft.com/en-us/rest/api/resource-manager/containerapps/container-apps-diagnostics/get-revision?view=rest-resource-manager-containerapps-2026-07-01
+- Guía «Update and deploy changes in Azure Container Apps»: estados de ejecución
+  «Scale to 0» (cero réplicas, sin aprovisionamiento en curso), «Activating», «Running»,
+  «Running (at max)», «Degraded» y «Failed». Fuente:
+  https://learn.microsoft.com/en-us/azure/container-apps/revisions
+
+La verificación de ambos workflows exige ahora, en una sola consulta a la revisión:
+`properties.active`, `properties.provisioningState == Provisioned`, `properties.runningState`
+no fallido, `properties.template.containers[0].image` igual al digest esperado y, **solo si
+`properties.replicas >= 1`**, `properties.healthState == Healthy`. Con 0 réplicas se acepta
+`Stopped`/`None`. Falla inmediata si `provisioningState` es `Failed`/`Deprovisioning`/
+`Deprovisioned`, `runningState` es `Failed`/`Degraded` o `healthState` es `Unhealthy`.
+Ya no se exige `properties.state == Active` ni `replicas == 1`.
+
+Tests actualizados: `test_deploy_waits_and_verifies_the_active_revision` y
+`test_rollback_uses_the_same_verification` comprueban los nuevos campos y ausencia de
+`"$replicas" == "1"`; `test_deploy_verification_accepts_scale_to_zero` verifica que no se
+exige ni una réplica ni un estado `Active` antiguo.
+
+### c) HTTPS interno verificado y `allowInsecure: false`
+
+El 2026-11-19, desde dentro del entorno:
+`https://ca-thehouse-genai-u2.internal.grayisland-cb722b5f.eastus2.azurecontainerapps.io/health/ready`
+devolvió **200 con el payload exacto** y certificado válido. `infra/genai.bicep` cambia
+`allowInsecure: true` → `false`; HTTP se redirige a HTTPS y **el Backend llamará a
+`https://ca-thehouse-genai-u2`**. El runbook (paso 4) y la guía ya no recomiendan HTTP.
+`test_bicep_references_existing_environment_and_internal_ingress` exige `false` y prohíbe `true`.
+
+### d) Gemini permanece en capa gratuita
+
+Por la política de costo $0 queda **derogada** la recomendación de crear un proyecto de pago
+con tope de gasto (011/D-8 y deuda 004-(b)). En la capa gratuita Google puede usar el
+contenido enviado para mejorar sus productos
+(https://ai.google.dev/gemini-api/docs/billing); por eso GenAI aplica su redacción de PII
+(spec 005) **antes de enviar** cualquier prompt. El proyecto de AI Studio de producción es
+separado. El cupo local de 400 no es la garantía: la cuota real es de Gemini (500 RPD).
+
+### e) Reaplicación en Azure y what-if previo
+
+El runbook (Apéndice B, sección 6) indica ahora: consultar el digest en ejecución antes de
+reaplicar; tomar los secretos del gestor de contraseñas del equipo con `read -rs` o archivo
+temporal con `umask 077`; ejecutar `az deployment group what-if` con ese mismo digest y
+revisarlo antes de `az deployment group create`. **Cambios esperados en el what-if: solo
+`configuration.ingress.allowInsecure` (true → false) y `template.scale`** (minReplicas 1 → 0,
+cooldownPeriod 300, pollingInterval 30, regla `http-concurrency`). No se espera ningún cambio
+en secretos, variables, imagen ni en `cae-thehouse-u2`. Si aparece otro cambio, detener.
+El cambio de ingress es de ámbito de aplicación (sin revisión nueva); el de `template.scale`
+sí crea una revisión nueva.
+
+### Gates tras estos cambios
+
+```text
+$ .venv\Scripts\python.exe -m ruff check .
+All checks passed!
+
+$ .venv\Scripts\python.exe -m mypy src
+Success: no issues found in 36 source files
+
+$ .venv\Scripts\python.exe -m pytest
+1082 passed, 1 warning in 8.93s
+
+$ git diff --check
+(sin salida, código 0)
+```
+
+El único warning sigue siendo el `StarletteDeprecationWarning` heredado (deuda 008).
+
 ## Bloques B2–B8
 
 - [x] Digest de `python:3.12-slim` con fecha y URL de la fuente oficial (B2):
@@ -547,17 +814,22 @@ para exigir la versión fijada. El step sigue siendo **no bloqueante**
   Nada depende de que el paquete esté instalado.
 - [ ] Se muestran solo los tests de texto del Dockerfile; la construcción real se valida
   en CI en B3.
-- [ ] SHA de cada acción con fecha y URL de su release oficial (B3).
-- [ ] Salidas de build, escaneo y SBOM en PR y en `main` (B3/B4).
-- [ ] Digest publicado en GHCR y revisión de ACA creada (B4/B5).
-- [ ] Resultado del gating por revisión y probes (B6).
-- [ ] Verificación `exec` dentro de GenAI contra `localhost:8000` (B6).
-- [ ] Revisiones antes y después del rollback probado (B6).
-- [ ] Resultados finales de los gates y `git diff --check` (B8).
+- [x] SHA de cada acción con fecha y URL de su release oficial (B3); `azure/login` añadido
+  en B6 con su tabla verificada más arriba.
+- [x] Salidas de build, escaneo y SBOM en PR y en `main` (B3/B4).
+- [x] Digest publicado en GHCR (CI #31) y revisión de ACA creada (B4/B5).
+- [ ] Resultado del gating automático por revisión y probes (B6): implementado y cubierto
+  por tests de texto; pendiente de su primera ejecución real en un push a `main`. La
+  comprobación manual equivalente ya está registrada arriba (revisión `okuxih9`).
+- [x] Verificación `exec` dentro de GenAI contra `localhost:8000` (B6).
+- [ ] Revisiones antes y después del rollback probado (B6): workflow listo; pendiente de
+  ejecutarse una vez con el digest `6411108f…` como entrada.
+- [x] Resultados finales de los gates y `git diff --check` (B8).
 
 ## Evidencia requerida al cerrar
 
-- [ ] Criterios de aceptación verificados.
-- [ ] Sin secretos, PII ni tokens en código, logs o fixtures.
-- [ ] Referencia al commit que cierra la spec.
+- [ ] Criterios de aceptación verificados (queda la prueba real del rollback y del gating
+  automático en el primer push a `main`).
+- [x] Sin secretos, PII ni tokens en código, logs o fixtures.
+- [ ] Referencia al commit que cierra la spec: no se ha hecho commit (instrucción recibida).
 - [ ] Solo entonces cambiar el estado a IMPLEMENTED.
