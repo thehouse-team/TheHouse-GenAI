@@ -370,6 +370,7 @@ def test_deploy_waits_and_verifies_the_active_revision() -> None:
         '"$rc" -eq 0',
         '"$rc" -eq 2',
         "Fatal revision state or invalid payload",
+        "Last parsed state:",
         "**Revision:**",
         "**Digest:**",
         "**Previous image (for rollback):**",
@@ -443,6 +444,7 @@ def test_rollback_uses_the_same_verification() -> None:
         "revision_status.py revision.json --expected \"$IMAGE_REF\"",
         '"$rc" -eq 0',
         '"$rc" -eq 2',
+        "Last parsed state:",
         "**Revision:**",
     ):
         assert token in block, token

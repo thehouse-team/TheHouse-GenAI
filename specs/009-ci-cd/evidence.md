@@ -885,29 +885,32 @@ en producción. El parser los acepta como estados listos junto a `Stopped` y `Ru
 Clasificación explícita implementada en `revision_status.py` (swagger citado + valores
 reales de producción + etiquetas normalizadas de la guía oficial):
 
-| Campo | Válido / listo | Esperar (reintento) | Fatal (abortar) |
-| --- | --- | --- | --- |
-| `provisioningState` | `Provisioned` | `Provisioning` | `Failed`, `Deprovisioning`, `Deprovisioned` |
-| `runningState` (0 réplicas) | `ScaledToZero`, `Stopped` | `Activating`, `Unknown` | `Failed`, `Degraded`, `ActivationFailed` |
-| `runningState` (>=1 réplica) | `Running`, `RunningAtMaxScale` | `Provisioning`, `Processing`, `Scaling`, `Unknown` | `Failed`, `Degraded`, `ActivationFailed` |
-| `healthState` | `Healthy`, `None` (solo con 0 réplicas) | — | `Unhealthy` |
+Criterio **vigente tras el tercer despliegue** (sección más abajo):
 
-Cualquier valor fuera de estos conjuntos se considera inesperado y aborta con mensaje claro.
+| Campo | LISTO (0) | ESPERAR (1) | FATAL (2) |
+| --- | --- | --- | --- |
+| `provisioningState` | `Provisioned` | `Provisioning`, vacío, desconocido | `Failed`, `Deprovisioning`, `Deprovisioned` |
+| `runningState` (0 réplicas) | `ScaledToZero`, `Stopped` | vacío, desconocido, transitorios | `Failed`, `Degraded`, `ActivationFailed` |
+| `runningState` (>=1 réplica) | `Running`, `RunningAtMaxScale` | `Processing`, `Activating`, vacío, desconocido | `Failed`, `Degraded`, `ActivationFailed` |
+| `healthState` | `Healthy` (y `None` con 0 réplicas) | nulo/`None`/vacío con réplicas > 0, desconocido | `Unhealthy` |
+| imagen | igual al digest esperado | distinta antes de `Provisioned` | distinta tras `Provisioned`, ausente o vacía |
+
+Los valores vacíos y cualquier valor desconocido de los enums son una transición normal:
+imprimen `WARNING: ...` con el valor (nunca secretos) y devuelven código 1.
 
 ### Corrección
 
 - `ci.yml` y `rollback.yml` obtienen la revisión con
   `az containerapp revision show ... -o json > revision.json` (sin `--query` multi-select) y
   pasan el archivo a `.github/ci/revision_status.py --expected <digest>`.
-- El parser (stdlib, sin red ni secretos) valida que `name`, `properties.active`,
-  `provisioningState`, `runningState`, `replicas` y `template.containers[0].image` existan y
-  tengan el tipo correcto, y clasifica cada estado con los conjuntos de la tabla anterior.
-  Con 0 réplicas, `healthState` `Healthy` o nulo son válidos. Cualquier campo vacío, nulo o
-  con valor inesperado (por ejemplo la imagen) produce **FATAL con mensaje claro** y sale con
-  código 2: el job aborta en el mismo intento, sin confundirlo con una espera.
-- Códigos: `0` verificado, `1` aún no listo (reintenta), `2` fatal (JSON inválido, campo
-  obligatorio ausente, valor inesperado o estado fallido).
-- `tests/test_revision_status.py`: 25 tests sin red alimentan el parser con un JSON de ejemplo
+- El parser (stdlib, sin red ni secretos) exige solo datos estructurales (`name`,
+  `properties`, `template.containers[0].image` y un JSON válido). Todo lo demás se clasifica
+  como listo, esperar o fatal según la tabla. Cada intento imprime una línea completa
+  `revision=... active=... provisioning=... running=... health=... replicas=... image=...`,
+  y al agotar los 24 intentos se imprime el último estado parseado.
+- Códigos: `0` verificado, `1` aún no listo (reintenta con aviso), `2` fatal solo para fallo
+  explícito documentado o dato estructural ausente/inválido.
+- `tests/test_revision_status.py`: 28 tests sin red alimentan el parser con un JSON de ejemplo
   con la forma ARM real (sin secretos). Incluyen un test con **exactamente** el caso real
   (`Provisioned`, `ScaledToZero`, `Healthy`, 0 réplicas y el digest `bb106ef6…`) que devuelve
   código 0, parametrización de `healthState` `Healthy`/nulo, clasificación de los 12 valores
@@ -930,7 +933,7 @@ $ .venv\Scripts\python.exe -m mypy --strict .github/ci/revision_status.py
 Success: no issues found in 1 source file
 
 $ .venv\Scripts\python.exe -m pytest
-1112 passed, 1 warning in 11.19s
+1115 passed, 1 warning in 11.60s
 
 $ git diff --check
 (sin salida, código 0)
@@ -976,6 +979,37 @@ uso con `persist-credentials: false`; que `deploy` usa `ref: ${{ github.sha }}`;
 los jobs que leen archivos del repo hacen checkout (con la excepción documentada de
 `publish`). Con la versión anterior del workflow estos tests fallan porque no hay paso de
 checkout en `deploy` ni en `rollback`.
+
+## Tercer despliegue real: `healthState` nulo durante el arranque (2026-11-20)
+
+Con el checkout ya corregido, la verificación abortó en el intento 1 con:
+
+```text
+FATAL: cannot parse revision JSON: healthState is null but replicas > 0: unexpected state
+```
+
+Justo después de `az containerapp update`, la revisión nueva tiene réplica pero Azure todavía
+no ha evaluado su salud: `healthState` nulo con `replicas=1` es una **transición normal**, no
+un fallo. Es el tercer estado real no previsto (después de `ScaledToZero` y
+`RunningAtMaxScale`), así que se cambió el criterio del parser en lugar de añadir casos
+aislados:
+
+- **FATAL (2)** solo para fallo explícito documentado (`provisioningState`
+  `Failed`/`Deprovisioning`/`Deprovisioned`, `runningState` `Failed`/`Degraded`/
+  `ActivationFailed`, `healthState` `Unhealthy`) o datos estructurales ausentes/inválidos
+  (sin `name`, sin imagen, JSON inválido, imagen distinta al digest esperado una vez
+  aprovisionada).
+- **ESPERAR (1)** para todo lo demás que aún no está listo: `healthState` nulo/`None` con
+  réplicas > 0, valores vacíos y cualquier valor desconocido de los enums. Se imprime
+  `WARNING: ...` con el valor, sin secretos.
+- **LISTO (0)** solo con los estados válidos ya definidos y la imagen exacta.
+- Cada intento imprime la línea completa del estado parseado; al agotar los intentos se
+  imprime `Last parsed state: ...` con el último estado, en `ci.yml` y en `rollback.yml`.
+
+Tests nuevos/ajustados en `tests/test_revision_status.py`: el caso real (réplicas 1 y
+`healthState` nulo) da 1; un `runningState` desconocido da 1 con aviso; `Unhealthy` da 2;
+imagen distinta al digest tras `Provisioned` da 2; los dos casos reales anteriores siguen
+dando 0. `tests/test_ci_security.py` comprueba que ambos workflows imprimen el último estado.
 
 ## Bloques B2–B8
 
