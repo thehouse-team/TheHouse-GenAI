@@ -75,6 +75,7 @@ jobs:
           group="${{ vars.AZURE_RESOURCE_GROUP }}"
           attempts=24
           sleep_seconds=10
+          last_state=""
           revision="$(az containerapp show --name "$app" --resource-group "$group" \
             --query properties.latestRevisionName -o tsv)"
 
@@ -84,7 +85,9 @@ jobs:
               --revision "$revision" -o json > revision.json
             echo "attempt ${attempt}/${attempts}"
             rc=0
-            python3 .github/ci/revision_status.py revision.json --expected "$IMAGE_REF" || rc=$?
+            output="$(python3 .github/ci/revision_status.py revision.json --expected "$IMAGE_REF" 2>&1)" || rc=$?
+            echo "$output"
+            last_state="$(printf '%s\n' "$output" | grep -m1 '^revision=' || true)"
             if [[ "$rc" -eq 0 ]]; then
               echo "VERIFIED revision=${revision} image=${IMAGE_REF}"
               echo "**Revision:** \`${revision}\`" >> "$GITHUB_STEP_SUMMARY"
@@ -99,4 +102,5 @@ jobs:
           done
 
           echo "Rollback verification failed after ${attempts} attempts."
+          echo "Last parsed state: ${last_state}"
           exit 1

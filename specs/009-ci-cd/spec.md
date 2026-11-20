@@ -311,9 +311,12 @@ in Azure Container Apps» (estados «Scale to 0», «Failed», «Degraded»).
 
 El job `deploy` (y `rollback.yml`) no interpreta estos campos con `-o tsv`: consulta la revisión
 con `az containerapp revision show ... -o json` y pasa el archivo a
-`.github/ci/revision_status.py`, que valida la forma JSON real y falla de inmediato si falta
-o está vacío un campo obligatorio (por ejemplo la imagen). El parser, sus reglas y un JSON de
-ejemplo están cubiertos por `tests/test_revision_status.py` (sin red).
+`.github/ci/revision_status.py`, que valida la forma JSON real y falla de inmediato solo si
+falta un dato estructural (por ejemplo la imagen) o hay un fallo explícito documentado.
+Los estados transitorios o desconocidos (incluido `healthState` nulo con réplicas durante el
+arranque) son un aviso y un reintento, no un error. Cada intento registra el estado completo y
+al agotarse se imprime el último. El parser, sus reglas y un JSON de ejemplo están cubiertos
+por `tests/test_revision_status.py` (sin red).
 
 ### 5. Rollback (coherente con `activeRevisionsMode: Single`)
 

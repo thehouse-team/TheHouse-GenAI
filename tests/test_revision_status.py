@@ -119,7 +119,7 @@ def test_parse_revision_accepts_a_scaled_to_zero_revision(health: str | None) ->
     assert status.health_state == ("None" if health is None else health)
     assert status.running_state == "ScaledToZero"
     assert is_ready(status, IMAGE) is True
-    assert is_failed(status) is False
+    assert is_failed(status, IMAGE) is False
 
 
 def test_real_deployed_revision_is_verified(tmp_path: Path) -> None:
@@ -186,13 +186,44 @@ def test_running_state_classification(
     status = parse_revision(_revision(properties=overrides))
 
     assert is_ready(status, IMAGE) is ready
-    assert is_failed(status) is failed
+    assert is_failed(status, IMAGE) is failed
 
 
-def test_main_fails_on_an_unknown_running_state(tmp_path: Path) -> None:
+def test_main_waits_and_warns_on_an_unknown_running_state(
+    tmp_path: Path, capsys: Any
+) -> None:
     path = _write(tmp_path, _revision(properties={"runningState": "UnexpectedState"}))
 
-    assert main([str(path), "--expected", IMAGE]) == 2
+    assert main([str(path), "--expected", IMAGE]) == 1
+    output = capsys.readouterr().out
+    assert "WARNING: unknown runningState='UnexpectedState'" in output
+    assert "NOT_READY" in output
+
+
+def test_third_real_case_starting_replica_with_null_health_waits(tmp_path: Path) -> None:
+    """Right after the update Azure has a replica but has not evaluated health yet."""
+
+    payload = _revision(
+        name="ca-thehouse-genai-u2--0000003",
+        image=REAL_IMAGE,
+        properties={
+            "active": True,
+            "provisioningState": "Provisioned",
+            "runningState": "Processing",
+            "healthState": None,
+            "replicas": 1,
+        },
+    )
+    path = _write(tmp_path, payload)
+
+    assert main([str(path), "--expected", REAL_IMAGE]) == 1
+
+
+def test_main_warns_on_empty_state_values(tmp_path: Path, capsys: Any) -> None:
+    path = _write(tmp_path, _revision(properties={"provisioningState": ""}))
+
+    assert main([str(path), "--expected", IMAGE]) == 1
+    assert "WARNING: empty provisioningState" in capsys.readouterr().out
 
 
 def test_main_verifies_the_exact_image(tmp_path: Path) -> None:
@@ -222,16 +253,23 @@ def test_main_fails_immediately_on_a_failed_state(tmp_path: Path) -> None:
     assert main([str(path), "--expected", IMAGE]) == 2
 
 
-def test_main_rejects_mismatched_image(tmp_path: Path) -> None:
+def test_main_rejects_mismatched_image_after_provisioning(tmp_path: Path) -> None:
     other = "ghcr.io/thehouse-team/thehouse-genai@sha256:" + "b" * 64
     path = _write(tmp_path, _revision())
 
-    assert main([str(path), "--expected", other]) == 1
+    assert main([str(path), "--expected", other]) == 2
 
 
-def test_parse_revision_rejects_null_health_with_replicas() -> None:
-    with pytest.raises(RevisionParseError, match="healthState is null but replicas > 0"):
-        parse_revision(_revision(properties={"healthState": None}))
+def test_null_health_with_replicas_is_only_a_wait(tmp_path: Path) -> None:
+    path = _write(tmp_path, _revision(properties={"healthState": None}))
+
+    assert main([str(path), "--expected", IMAGE]) == 1
+
+
+def test_unhealthy_is_fatal(tmp_path: Path) -> None:
+    path = _write(tmp_path, _revision(properties={"healthState": "Unhealthy"}))
+
+    assert main([str(path), "--expected", IMAGE]) == 2
 
 
 def test_parse_revision_rejects_missing_template() -> None:
