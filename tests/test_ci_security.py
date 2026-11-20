@@ -307,6 +307,7 @@ def test_published_image_is_the_tested_one() -> None:
 
 ROLLBACK_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "rollback.yml"
 AZURE_LOGIN_PIN = "azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0"
+CHECKOUT_PIN = "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1"
 
 
 def test_deploy_runs_only_on_main_after_publish() -> None:
@@ -458,3 +459,38 @@ def test_all_actions_in_both_workflows_are_pinned() -> None:
                 r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+@[0-9a-f]{40}", parts[1]
             ), line
             assert re.search(r"#\s*v\d", line), line
+
+
+def test_every_job_using_the_revision_parser_checks_out_first() -> None:
+    cases = ((CI_WORKFLOW, "deploy"), (ROLLBACK_WORKFLOW, "rollback"))
+    for path, job_name in cases:
+        steps = _steps(_job_block(path.read_text(encoding="utf-8"), job_name))
+        parser_steps = [i for i, step in enumerate(steps) if "revision_status.py" in step]
+        checkout_steps = [i for i, step in enumerate(steps) if CHECKOUT_PIN in step]
+
+        assert parser_steps, f"{job_name}: no parser step"
+        assert checkout_steps, f"{job_name}: no checkout step"
+        assert min(checkout_steps) < min(parser_steps), f"{job_name}: checkout too late"
+        assert "persist-credentials: false" in steps[min(checkout_steps)]
+
+
+def test_deploy_checks_out_the_triggering_commit() -> None:
+    steps = _steps(_job_block(_workflow(), "deploy"))
+    checkout = next(step for step in steps if CHECKOUT_PIN in step)
+
+    assert "ref: ${{ github.sha }}" in checkout
+    assert "persist-credentials: false" in checkout
+
+
+def test_every_job_that_reads_repo_files_checks_out() -> None:
+    cases = (
+        (CI_WORKFLOW, ("quality", "lock-drift", "infra", "image", "deploy")),
+        (ROLLBACK_WORKFLOW, ("rollback",)),
+    )
+    for path, job_names in cases:
+        text = path.read_text(encoding="utf-8")
+        for name in job_names:
+            assert CHECKOUT_PIN in _job_block(text, name), f"{name} needs a checkout"
+
+    # publish only consumes uploaded artifacts, so it does not need a checkout.
+    assert CHECKOUT_PIN not in _job_block(_workflow(), "publish")
