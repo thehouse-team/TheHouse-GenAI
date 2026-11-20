@@ -289,6 +289,14 @@ jobs:
       contents: read
       id-token: write
     steps:
+      # Check out the exact commit that triggered the deploy so the parser matches it.
+      # No credentials are persisted: the only auth below is OIDC.
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
       # OIDC only: no client secret, no subscription-wide or resource-group role.
       # The custom role has exactly five actions, scoped to ca-thehouse-genai-u2:
       # containerApps/read, containerApps/write, revisions/read,

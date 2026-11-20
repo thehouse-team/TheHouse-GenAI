@@ -930,11 +930,52 @@ $ .venv\Scripts\python.exe -m mypy --strict .github/ci/revision_status.py
 Success: no issues found in 1 source file
 
 $ .venv\Scripts\python.exe -m pytest
-1109 passed, 1 warning in 11.70s
+1112 passed, 1 warning in 11.19s
 
 $ git diff --check
 (sin salida, código 0)
 ```
+
+## Segundo despliegue real: checkout faltante en `deploy` (2026-11-20)
+
+El job `deploy` volvió a fallar en el intento 1/24 con:
+
+```text
+python3: can't open file '/home/runner/work/TheHouse-GenAI/TheHouse-GenAI/.github/ci/revision_status.py': [Errno 2] No such file or directory
+Fatal revision state or invalid payload; aborting without rollback.
+```
+
+El mecanismo de **fallo fatal inmediato funcionó como se diseñó**: no se reintentó 24 veces,
+se abortó en el primer intento con un mensaje claro. La causa es que los jobs `deploy` y
+`rollback` no hacían checkout del repositorio, así que `.github/ci/revision_status.py` no
+existía en el runner. No es un problema de permisos: `contents: read` ya cubre el checkout.
+
+Corrección aplicada en `ci.yml` y `rollback.yml`:
+
+- `actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1` (el **mismo SHA
+  verificado** que ya usan los demás jobs de `ci.yml`), antes de cualquier uso del parser,
+  con `persist-credentials: false` para no dejar credenciales en el runner (la única auth
+  del job es OIDC).
+- En `deploy`, `ref: ${{ github.sha }}`: el job se dispara por `push` a `main`, así que se
+  usa el commit exacto que disparó el despliegue y el parser corresponde al código desplegado.
+- En `rollback`, se conserva el **ref por defecto del `workflow_dispatch`** (el ref que el
+  operador selecciona al lanzar el workflow, normalmente `refs/heads/main`), sin `ref:`
+  explícito. El rollback es una acción manual: el operador elige el ref desde el que se
+  ejecuta y debe validarse con el parser de ese mismo ref. Fijar `github.sha` aquí sería
+  incorrecto porque en un `workflow_dispatch` ese SHA no identifica el código con el que se
+  quiere ejecutar la verificación.
+
+Revisión del resto de jobs: `quality`, `lock-drift`, `infra` e `image` ya hacían checkout y
+leen archivos del repo (locks, Bicep, Dockerfile). `publish` no hace checkout porque solo
+descarga los artifacts `genai-image` y `sbom-spdx`; no lee archivos del repositorio. Tras
+este cambio, todo job que ejecuta el parser tiene checkout previo.
+
+Tests nuevos en `tests/test_ci_security.py`: comprueban, leyendo ambos YAML, que todo job
+que ejecuta `.github/ci/revision_status.py` tiene un paso `actions/checkout` antes de ese
+uso con `persist-credentials: false`; que `deploy` usa `ref: ${{ github.sha }}`; y que todos
+los jobs que leen archivos del repo hacen checkout (con la excepción documentada de
+`publish`). Con la versión anterior del workflow estos tests fallan porque no hay paso de
+checkout en `deploy` ni en `rollback`.
 
 ## Bloques B2–B8
 
