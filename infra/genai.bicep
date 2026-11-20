@@ -45,10 +45,10 @@ resource app 'Microsoft.App/containerApps@2025-01-01' = {
         external: false
         targetPort: 8000
         transport: 'auto'
-        // ACA redirects HTTP to HTTPS on port 80 unless allowInsecure is true.
-        // The Backend calls http://ca-thehouse-genai-u2; traffic never leaves the
-        // environment (per Microsoft Learn: communicate between container apps).
-        allowInsecure: true
+        // Verified 2026-11-19: the internal FQDN serves HTTPS with a valid certificate
+        // and /health/ready returns the exact payload. The Backend calls https:// and
+        // HTTP is redirected to HTTPS. Traffic never leaves the environment.
+        allowInsecure: false
       }
       secrets: concat(
         [
@@ -123,8 +123,23 @@ resource app 'Microsoft.App/containerApps@2025-01-01' = {
         }
       ]
       scale: {
-        minReplicas: 1
+        // Team $0 cost policy (2026-11-19): scale to zero when idle.
+        // Explicit HTTP rule: one replica handles up to 10 concurrent requests
+        // (documented ACA default); maxReplicas stays at 1.
+        minReplicas: 0
         maxReplicas: 1
+        cooldownPeriod: 300
+        pollingInterval: 30
+        rules: [
+          {
+            name: 'http-concurrency'
+            http: {
+              metadata: {
+                concurrentRequests: '10'
+              }
+            }
+          }
+        ]
       }
     }
   }

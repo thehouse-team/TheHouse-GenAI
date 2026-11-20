@@ -285,3 +285,156 @@ def test_published_image_is_the_tested_one() -> None:
     assert "name: genai-image" in publish
     assert "docker tag thehouse-genai:ci" in publish
     assert "docker build-push-action" not in publish
+
+
+# --- B6: deployment with approval and rollback -------------------------------------
+
+
+ROLLBACK_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "rollback.yml"
+AZURE_LOGIN_PIN = "azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0"
+
+
+def test_deploy_runs_only_on_main_after_publish() -> None:
+    block = _job_block(_workflow(), "deploy")
+    assert "needs: publish" in block
+    assert "if: github.event_name == 'push' && github.ref == 'refs/heads/main'" in block
+
+
+def test_deploy_uses_the_production_environment() -> None:
+    block = _job_block(_workflow(), "deploy")
+    assert "environment: production" in block
+
+
+def test_deploy_permissions_are_exact() -> None:
+    block = _job_block(_workflow(), "deploy")
+    match = re.search(r"    permissions:\n((?:      .*\n)+)", block)
+    assert match is not None
+    scope = match.group(1)
+    assert "contents: read" in scope
+    assert "id-token: write" in scope
+    assert len([line for line in scope.splitlines() if line.strip()]) == 2
+
+
+def test_deploy_logs_in_via_pinned_oidc_action_and_environment_vars() -> None:
+    block = _job_block(_workflow(), "deploy")
+    assert AZURE_LOGIN_PIN in block
+    for name in (
+        "AZURE_CLIENT_ID",
+        "AZURE_TENANT_ID",
+        "AZURE_SUBSCRIPTION_ID",
+        "AZURE_RESOURCE_GROUP",
+        "AZURE_CONTAINER_APP",
+    ):
+        assert f"vars.{name}" in block, name
+
+
+def test_deploy_uses_the_exact_digest_not_a_tag() -> None:
+    text = _workflow()
+    block = _job_block(text, "deploy")
+    assert "needs.publish.outputs.digest" in block
+    assert "ghcr.io/thehouse-team/thehouse-genai@${DIGEST}" in block
+    assert "az containerapp update" in block
+    assert "--image \"$image\"" in block
+    assert "^sha256:[0-9a-f]{64}$" in block
+    assert "docker tag" not in block
+
+
+def test_deploy_waits_and_verifies_the_active_revision() -> None:
+    block = _job_block(_workflow(), "deploy")
+    for token in (
+        "attempts=24",
+        "sleep_seconds=10",
+        "properties.latestRevisionName",
+        "properties.active",
+        "properties.provisioningState",
+        "properties.runningState",
+        "properties.healthState",
+        "properties.replicas",
+        "properties.template.containers[0].image",
+        '"Provisioned"',
+        'Failed|Deprovisioning|Deprovisioned',
+        'Failed|Degraded',
+        '"$health" == "Unhealthy"',
+        '"$replicas" == "0"',
+        '"$health" == "Healthy"',
+        '"$image" == "$expected"',
+        "**Revision:**",
+        "**Digest:**",
+        "**Previous image (for rollback):**",
+    ):
+        assert token in block, token
+
+
+def test_deploy_verification_accepts_scale_to_zero() -> None:
+    block = _job_block(_workflow(), "deploy")
+    assert '"$replicas" == "1"' not in block
+    assert '"$active" == "$expected"' not in block
+    assert '"$health" == "None"' not in block
+
+
+def _rollback_workflow() -> str:
+    return ROLLBACK_WORKFLOW.read_text(encoding="utf-8")
+
+
+def test_rollback_is_a_dispatch_workflow_in_production() -> None:
+    text = _rollback_workflow()
+    assert "workflow_dispatch:" in text
+    assert "image_digest:" in text
+    assert "environment: production" in text
+    assert "needs:" not in text
+    assert AZURE_LOGIN_PIN in text
+
+
+def test_rollback_permissions_are_exact() -> None:
+    match = re.search(r"    permissions:\n((?:      .*\n)+)", _rollback_workflow())
+    assert match is not None
+    scope = match.group(1)
+    assert "contents: read" in scope
+    assert "id-token: write" in scope
+    assert len([line for line in scope.splitlines() if line.strip()]) == 2
+
+
+def test_rollback_validates_the_full_image_reference() -> None:
+    block = _rollback_workflow()
+    assert (
+        r"^ghcr\.io/thehouse-team/thehouse-genai@sha256:[0-9a-f]{64}$" in block
+    )
+    assert "az containerapp update" in block
+    assert "--image \"$IMAGE_REF\"" in block
+    assert '"$previous" == "$IMAGE_REF"' in block
+
+
+def test_rollback_uses_the_same_verification() -> None:
+    block = _rollback_workflow()
+    for token in (
+        "attempts=24",
+        "properties.latestRevisionName",
+        "properties.active",
+        "properties.provisioningState",
+        "properties.runningState",
+        "properties.healthState",
+        "properties.replicas",
+        "properties.template.containers[0].image",
+        '"Provisioned"',
+        'Failed|Deprovisioning|Deprovisioned',
+        'Failed|Degraded',
+        '"$health" == "Unhealthy"',
+        '"$replicas" == "0"',
+        '"$health" == "Healthy"',
+        '"$image" == "$IMAGE_REF"',
+    ):
+        assert token in block, token
+    assert '"$replicas" == "1"' not in block
+
+
+def test_all_actions_in_both_workflows_are_pinned() -> None:
+    for path in (CI_WORKFLOW, ROLLBACK_WORKFLOW):
+        for line in path.read_text(encoding="utf-8").splitlines():
+            stripped = line.strip()
+            if not stripped.startswith("uses:"):
+                continue
+            parts = stripped.split()
+            assert re.fullmatch(
+                r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+@[0-9a-f]{40}", parts[1]
+            ), line
+            assert re.search(r"#\s*v\d", line), line

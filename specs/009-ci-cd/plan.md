@@ -15,7 +15,7 @@
 5. OIDC con federated credential del entorno `production` y rol personalizado asignado
    exclusivamente sobre `ca-thehouse-genai-u2`.
 6. Despliegue por digest, verificación por estado de revisión y probes, y rollback por
-   activación de la revisión anterior.
+   redespliegue del último digest bueno (`activeRevisionsMode` es `Single`).
 7. Documentar promociones, rotación de claves y rollback antes de habilitar el CD.
 
 ## Decisiones aprobadas
@@ -29,13 +29,18 @@
 | D5 | Solo el entorno protegido `production`; sin `staging`. |
 | D6 | Bicep aplicado manualmente por el usuario en Cloud Shell; CI solo imagen y revisiones. |
 | D7 | `ca-thehouse-genai-u2` en `cae-thehouse-u2`, `rg-thehouse-u2`, East US 2. |
-| D8 | `minReplicas=1`, `maxReplicas=1`, 0.25 vCPU / 0.5 GiB, como el Backend. |
+| D8 | Originalmente `minReplicas=1`; **sustituido el 2026-11-19** por `minReplicas=0`, `maxReplicas=1` y regla HTTP explícita de 10 concurrentes por la política de costo $0. `maxReplicas=1`, 0.25 vCPU / 0.5 GiB se mantienen. |
 | D9 | Secretos directos de ACA; sin Key Vault en esta spec. |
 | D10 | Sin lectura de Log Analytics para el CI; gating por revisión y probes. |
 | D11 | Verificación con `az containerapp exec` dentro del contenedor de GenAI contra `localhost:8000` con Python; no tocar el Backend. E2E de red en G09. |
 | D12 | HSTS fuera de la app, documentado en el borde; `Server` suprimido con `--no-server-header`. |
-| D13 | Capa gratuita, `gemini-3.5-flash-lite`, 400 llamadas/día, coste 0; deuda de facturación con tope antes de la demo. |
+| D13 | Capa gratuita, `gemini-3.5-flash-lite`, coste 0. **Se mantiene la capa gratuita** por la política de costo $0; queda derogada la recomendación de pasar a capa de pago. El límite efectivo es de Gemini (500 RPD), no el cupo local de 400, que deja de ser exacto al escalar a 0. |
 | D14 | Alcance del rol OIDC **solo** sobre el recurso `ca-thehouse-genai-u2`, nunca sobre el grupo ni la suscripción, porque `rg-thehouse-u2` contiene el Backend. Rol personalizado sin `listSecrets`; no usar `Container Apps Contributor` por sus comodines `*/action`. Fuentes oficiales: permisos de Compute y "Manage secrets in Azure Container Apps" de Microsoft Learn. |
+| D21 | Política de costo $0 del equipo: `minReplicas=0`, `maxReplicas=1`, regla HTTP explícita `concurrentRequests: '10'`, `cooldownPeriod: 300` y `pollingInterval: 30`. Formato verificado en la referencia de `Microsoft.App/containerApps@2025-01-01` y en «Scaling in Azure Container Apps». |
+| D22 | El gating acepta 0 réplicas: exige revisión activa, `provisioningState=Provisioned`, `runningState` no fallido y digest exacto; `healthState=Healthy` solo si hay ≥1 réplica. Enums verificados en la API REST de revisiones y estados «Scale to 0»/«Failed»/«Degraded» de la guía oficial. |
+| D23 | HTTPS interno verificado el 2026-11-19 con certificado válido y payload exacto; `allowInsecure: false` en el Bicep y Backend llamando a `https://ca-thehouse-genai-u2`. |
+| D24 | Reaplicación del Bicep solo con el digest en ejecución, secretos del gestor de contraseñas y what-if previo; cambios esperados únicamente en `ingress.allowInsecure` y `template.scale`. |
+| D25 | Gemini sigue en capa gratuita: en ese modo Google puede usar el contenido, por lo que se refuerza la redacción de PII antes del envío (spec 005). Quedan derogadas las recomendaciones de proyecto de pago de 011 y 004. |
 
 ## Bloques de implementación
 
@@ -51,8 +56,8 @@
   `production` con OIDC, rol personalizado y Bicep para infraestructura.
 - **B5 — Configuración ACA.** Ingreso interno, puerto, réplicas, probes, secretos, variables,
   logs y alertas en Bicep; runbook de configuración.
-- **B6 — Verificación y rollback.** Gating por revisión/probes, `exec` controlado, job y
-  runbook de rollback, prueba de rollback.
+- **B6 — Verificación y rollback.** Gating por revisión/probes, `exec` controlado, workflow
+  y runbook de rollback por redespliegue del último digest bueno, prueba de rollback.
 - **B7 — Borde HTTP.** Supresión de `Server` y documentación de HSTS; tests de headers.
 - **B8 — Cierre.** Evidencia, checklist, memoria, PR con squash y squash en `main`.
 
@@ -84,7 +89,7 @@
 | SHA de acciones no verificable | Bloquea B3; se pide el valor al usuario, nunca se inventa. |
 | Rol con alcance excesivo | Rol personalizado en el recurso; sin comodines ni `listSecrets`; verificación en Cloud Shell. |
 | `managedEnvironments/read` exigido por la CLI | No ampliar el alcance; escalar al usuario. |
-| Arranque en frío frente al timeout de 8 s | `minReplicas=1`. |
+| Arranque en frío frente al timeout de 8 s (ahora esperado con `minReplicas=0`) | Fallback `generated=false` y timeout de 6 s en GenAI frente a 8 s en el Backend (D18 de 003). |
 | Estado local multiplicado por réplicas | `maxReplicas=1`. |
 | Rotación de secretos sin reinicio | Reiniciar la revisión activa en el runbook. |
 | Exposición accidental | Ingreso interno permanente; sin ingress externo ni IP abierta. |

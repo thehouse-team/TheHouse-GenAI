@@ -275,3 +275,102 @@ jobs:
           sbom-path: sbom.spdx.json
           push-to-registry: true
           create-storage-record: false
+
+  deploy:
+    name: Deploy to Azure Container Apps
+    needs: publish
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      # OIDC only: no client secret, no subscription-wide or resource-group role.
+      # The custom role has exactly five actions, scoped to ca-thehouse-genai-u2:
+      # containerApps/read, containerApps/write, revisions/read,
+      # revisions/restart/action and revisions/replicas/read. Do NOT add
+      # Contributor or any wildcard action to work around a CLI failure: record
+      # the exact error and escalate the missing action explicitly instead.
+      - name: Azure login via OIDC
+        uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Deploy the exact published digest
+        shell: bash
+        env:
+          DIGEST: ${{ needs.publish.outputs.digest }}
+        run: |
+          set -euo pipefail
+          image="ghcr.io/thehouse-team/thehouse-genai@${DIGEST}"
+          app="${{ vars.AZURE_CONTAINER_APP }}"
+          group="${{ vars.AZURE_RESOURCE_GROUP }}"
+
+          if ! [[ "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "Refusing to deploy: digest is not a bare sha256:<64 hex> value."
+            exit 1
+          fi
+
+          previous="$(az containerapp show --name "$app" --resource-group "$group" \
+            --query properties.template.containers[0].image -o tsv)"
+
+          az containerapp update --name "$app" --resource-group "$group" --image "$image"
+
+          echo "**Digest:** \`${DIGEST}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Previous image (for rollback):** \`${previous}\`" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Wait for the new revision and verify the active digest
+        shell: bash
+        env:
+          DIGEST: ${{ needs.publish.outputs.digest }}
+        run: |
+          set -euo pipefail
+          expected="ghcr.io/thehouse-team/thehouse-genai@${DIGEST}"
+          app="${{ vars.AZURE_CONTAINER_APP }}"
+          group="${{ vars.AZURE_RESOURCE_GROUP }}"
+          attempts=24
+          sleep_seconds=10
+          revision="$(az containerapp show --name "$app" --resource-group "$group" \
+            --query properties.latestRevisionName -o tsv)"
+
+          for attempt in $(seq 1 "$attempts"); do
+            row="$(az containerapp revision show --name "$app" --resource-group "$group" \
+              --revision "$revision" \
+              --query '[properties.active, properties.provisioningState, properties.runningState, properties.healthState, properties.replicas, properties.template.containers[0].image]' \
+              -o tsv)"
+            IFS=$'\t' read -r active provisioning running health replicas image <<< "$row"
+            replicas="${replicas:-0}"
+            echo "attempt ${attempt}/${attempts}: revision=${revision} active=${active} provisioning=${provisioning} running=${running} health=${health} replicas=${replicas} image=${image}"
+
+            failed=false
+            case "$provisioning" in Failed|Deprovisioning|Deprovisioned) failed=true ;; esac
+            case "$running" in Failed|Degraded) failed=true ;; esac
+            if [[ "$health" == "Unhealthy" ]]; then failed=true; fi
+            if [[ "$failed" == "true" ]]; then
+              echo "Revision ${revision} entered a failed state; no rollback was performed."
+              exit 1
+            fi
+
+            verified=false
+            if [[ ( "$active" == "true" || "$active" == "True" ) && "$provisioning" == "Provisioned" && "$image" == "$expected" ]]; then
+              if [[ "$replicas" == "0" ]]; then
+                verified=true
+              elif [[ "$replicas" =~ ^[1-9][0-9]*$ && "$health" == "Healthy" ]]; then
+                verified=true
+              fi
+            fi
+            if [[ "$verified" == "true" ]]; then
+              echo "VERIFIED revision=${revision} image=${image} replicas=${replicas}"
+              echo "**Revision:** \`${revision}\`" >> "$GITHUB_STEP_SUMMARY"
+              echo "**Verified image:** \`${image}\`" >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            sleep "$sleep_seconds"
+          done
+
+          echo "Deployment verification failed after ${attempts} attempts."
+          echo "No rollback was performed automatically: redeploy the previous image from the summary."
+          exit 1
