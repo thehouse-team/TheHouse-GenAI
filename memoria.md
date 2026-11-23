@@ -1,6 +1,6 @@
 # Memoria del proyecto — TheHouse GenAI
 
-Última actualización: 2026-11-19
+Última actualización: 2026-11-22
 
 ## Identidad
 
@@ -20,7 +20,7 @@ Smart Match, no consulta propiedades y no contiene Mobile.
 | 006-moderation | IMPLEMENTED | Política y moderación de la salida generativa (alcance A) |
 | 007-observability | IMPLEMENTED | Métricas en memoria, presupuesto diario, endpoints internos, SLOs y alertas documentadas |
 | 008-testing | PLANNED | Estrategia completa y contract tests (transversal, cierra en G09) |
-| 009-ci-cd | ACTIVE | Imagen endurecida, CI/CD, OIDC y despliegue en ACA (G10) |
+| 009-ci-cd | IMPLEMENTED | Imagen endurecida, CI/CD, OIDC y despliegue en ACA (G10) |
 | 010-integration-thehouse | PLANNED | Contratos y operación con Backend |
 | 011-llm-provider | IMPLEMENTED | Evaluación de proveedores y adaptador real detrás del puerto |
 
@@ -45,6 +45,20 @@ cobertura) se acumulan en cada fase y la spec se cierra en G09, junto con
 
 ## Spec activa
 
+**Ninguna spec está ACTIVE** desde el 2026-11-22.
+
+`009-ci-cd` (G10) se cerró como **IMPLEMENTED** el 2026-11-22. El CD con aprobación se
+verificó en CI #39 (PR #19): login OIDC, despliegue por digest
+`sha256:a5e6051b…` y verificación de la revisión `0000005` tras tres intentos
+`NOT_READY` (`Activating`/`None`) y un cuarto `RunningAtMaxScale`/`Healthy` → `VERIFIED`.
+El rollback se probó en producción ese mismo día (`0000006` con `47670b63` y roll-forward
+`0000007` con `a5e6051b`, ambos verificados; transición de tráfico resuelta en 2 minutos).
+El Bicep se reaplicó con el digest en ejecución (revisión `0000008`, `allowInsecure=false`,
+escalado 0→1 y regla `http-concurrency`). Cierre B7–B8: `-o none` en `update` y gate de
+tráfico exclusivo (100 % en la revisión nueva, sin otra activa con tráfico; desvíos =
+ESPERAR). Decisiones D1–D27, evidencia y deudas registradas abajo. `008-testing` y
+`010-integration-thehouse` permanecen `PLANNED`.
+
 `004-natural-language-search` (G08) se cerró como **IMPLEMENTED** el 2026-11-18 sobre la
 rama `feature/natural-language-search`, con plan aprobado y las decisiones D1–D13 más los
 4 ajustes obligatorios registrados más abajo aplicados. Añade
@@ -55,18 +69,13 @@ real con `gemini-3.5-flash-lite` cerró en 29/30 exactos tras reintentos; el dia
 ps-03 reveló el bug del parser estricto, corregido sin relajar la validación. `maxBudget`
 y `maxDistanceKm` se serializan como números JSON porque el contrato con Backend manda.
 
-Hecho registrado el 2026-11-19: los bloques B0–B3 de la spec 009 entraron a `main` en el
-PR #9 de forma anticipada, por un merge de un compañero sobre un borrador. La spec 009
-sigue **ACTIVE** y G10 continúa en la rama `feature/deployment-cd`, creada desde `main`
-actualizado.
-
-`009-ci-cd` (G10) está **ACTIVE** desde el 2026-11-18 sobre la rama `feature/deployment`,
-con plan aprobado por el usuario y la enmienda 1.2 ratificada. Su objetivo es publicar la
-imagen del servicio en GHCR y desplegarla por digest en la Container App
-`ca-thehouse-genai-u2` del entorno `cae-thehouse-u2` (mismo entorno que el Backend), con
-ingreso interno, OIDC, entorno `production` protegido y rollback por revisiones. Las
-decisiones D1–D14 se registran más abajo. `008-testing` y `010-integration-thehouse`
-permanecen `PLANNED`.
+Hecho registrado: los bloques B0–B3 de la spec 009 entraron a `main` en el PR #9 de forma
+anticipada, por un merge de un compañero sobre un borrador; el trabajo de G10 continuó en
+`feature/deployment-cd` y el cierre B7–B8 en `feature/close-ci-cd`. `009-ci-cd` se activó
+el 2026-11-18 con plan aprobado y la enmienda 1.2 ratificada: publicación en GHCR y
+despliegue por digest en `ca-thehouse-genai-u2` (entorno `cae-thehouse-u2`, mismo que el
+Backend), ingreso interno, OIDC, entorno `production` protegido y rollback por revisiones.
+Ya no queda trabajo pendiente de esta spec.
 
 `007-observability` (G07) se cerró como **IMPLEMENTED** el 2026-11-18 sobre la
 rama `feature/observability` con las decisiones 1–9 aplicadas: métricas en memoria con
@@ -414,8 +423,9 @@ Ajustes obligatorios incorporados al diseño:
 
 ## Decisiones tomadas en 009
 
-Plan aprobado por el usuario el 2026-11-18. Las decisiones D1–D13 más el ajuste de
-seguridad D14 se aplican en los bloques B0–B8 de `specs/009-ci-cd/plan.md`.
+Plan aprobado por el usuario el 2026-11-18. Las decisiones D1–D27 (incluido el ajuste de
+seguridad D14 y los cierres D26–D27) se aplicaron en los bloques B0–B8 de
+`specs/009-ci-cd/plan.md`.
 
 | # | Decisión |
 | --- | --- |
@@ -468,6 +478,8 @@ Decisiones adicionales de B6:
 | D23 | HTTPS interno verificado el 2026-11-19 (200, payload exacto, certificado válido): `allowInsecure: false` en el Bicep y el Backend llamará a `https://ca-thehouse-genai-u2`. |
 | D24 | Reaplicar el Bicep solo con el digest en ejecución, secretos del gestor de contraseñas y what-if previo; cambios esperados solo en `ingress.allowInsecure` y `template.scale`. |
 | D25 | Gemini permanece en capa gratuita: Google puede usar el contenido enviado, por lo que la redacción de PII de 005 se aplica antes del envío. Derogadas las recomendaciones de proyecto de pago de 011/D-8 y deuda 004-(b). |
+| D26 | `az containerapp update` usa `-o none` en `deploy` y `rollback`: el log no debe contener el JSON completo de la app (IPs de salida, nombres de variables). Las consultas previas siguen siendo puntuales con `-o tsv`. |
+| D27 | La verificación exige `trafficWeight=100` en la revisión nueva y ninguna otra revisión activa con tráfico, usando `az containerapp revision list -o json` leído de disco y nunca impreso. Un peso parcial/ausente o una revisión ajena con tráfico es ESPERAR (1), nunca fatal (2), para no aprobar durante la transición. |
 
 ## Evidencia resumida
 
@@ -551,6 +563,20 @@ Decisiones adicionales de B6:
 - Evidencia completa en `specs/007-observability/evidence.md`, incluida la prueba manual
   real pendiente de los endpoints internos.
 
+### 009-ci-cd
+
+- `ruff check .`: sin hallazgos.
+- `mypy src`: sin errores (strict) en 36 archivos.
+- `mypy --strict .github/ci/revision_status.py`: sin errores (1 archivo).
+- `pytest`: 1131 tests aprobados, sin red (guard `block_network`), 1 warning heredado de
+  `TestClient` (deuda 008).
+- `git diff --check`: limpio.
+- CD verificado en CI #39 (PR #19) con la revisión `0000005`; rollback probado en
+  producción el 2026-11-22 (`0000006`/`0000007`); Bicep reaplicado (revisión `0000008`).
+- Rama `feature/close-ci-cd`: cambios de cierre sin commit (instrucción recibida). PRs #9 y
+  #13–#19 integrados por squash a `main`.
+- Evidencia completa en `specs/009-ci-cd/evidence.md`.
+
 ## Deuda y pendientes
 
 - `GENAI_API_KEY=` y `GENAI_MODEL=` vacíos quedaban como `SecretStr('')` y `''` en lugar
@@ -604,8 +630,9 @@ Decisiones adicionales de B6:
 - Deuda 006-(d): se mantiene el `StarletteDeprecationWarning` de `TestClient` con
   `httpx`; se revisa en 008. Es la misma deuda (e) ya registrada.
 - Contract tests e integración (008–010).
-- No hay despliegue. Hay una credencial de desarrollo en el entorno local, fuera del
-  repositorio: la capa gratuita de Gemini se usa solo con prompts sintéticos.
+- Despliegue operativo en Azure Container Apps (`ca-thehouse-genai-u2`, ingreso interno,
+  solo HTTPS). La credencial de desarrollo sigue fuera del repositorio; la capa gratuita de
+  Gemini se usa solo con prompts sintéticos en las pruebas manuales.
 
 - Deuda 007-(a): métricas y presupuesto son por proceso; se pierden al reiniciar y con N
   réplicas el cupo efectivo es N× el configurado. En G10: agregación en Azure Monitor y
@@ -638,6 +665,29 @@ Decisiones adicionales de B6:
   resolvió con locks universales y el objetivo era conservar las versiones resueltas.
   Decidir en una spec/PR posterior con su propio análisis de impacto.
 
+### Deudas registradas al cerrar 009 (2026-11-22)
+
+1. **Estado en memoria:** el presupuesto diario, el rate limit y las métricas viven en el
+   proceso y se reinician al escalar a 0 (`minReplicas=0`). El cupo local de 400 llamadas/día
+   deja de ser exacto; la cuota real la pone Gemini (500 RPD). Agrava 007-(a) y la deuda (a)
+   de 005; requiere store compartido o agregación en Azure Monitor.
+2. **Gemini en capa gratuita:** Google puede usar el contenido enviado para mejorar sus
+   productos, por lo que la redacción de PII de 005 se aplica antes del envío. La capa
+   gratuita además es inestable (deuda 004-(b): `PROVIDER_UNAVAILABLE` y picos de 8–13 s).
+   El proyecto de pago con tope de gasto sigue derogado por la política de costo $0 (D25).
+3. **Créditos de la suscripción de prueba de Azure:** vencen el **2026-12-02**. Después los
+   servicios se pausan si no se actualiza la cuenta; hay que recordarlo antes de la demo.
+4. **Estados reales de ACA no documentados en el swagger:** `ScaledToZero` y
+   `RunningAtMaxScale` aparecen en producción pero no están en los enums de
+   `ContainerAppsRevisions.json`; el parser los acepta y conviene vigilar futuras versiones
+   de la API. `Activating` tampoco aparece en el swagger y se trata como ESPERAR.
+5. **SBOM/attestations:** el aviso `Failed to create storage record / artifact-metadata:write`
+   se desactivó con `create-storage-record: false` por mínimo privilegio (no se necesitan
+   esos metadatos). Si en el futuro se exigen, hay que conceder `artifact-metadata:write`
+   de forma explícita.
+6. **Warning de `TestClient`:** `StarletteDeprecationWarning` con `httpx`, heredado y
+   documentado en 003/006/007; se cierra con `008-testing` en G09.
+
 ## Próximo paso
 
 G07 = `007-observability` y G08 = `004-natural-language-search` quedaron **IMPLEMENTED**.
@@ -646,15 +696,15 @@ reutilizados, moderación y PII de punta a punta, ruta de métricas propia, corp
 casos y script manual opt-in; la evidencia está en
 `specs/004-natural-language-search/evidence.md`.
 
-G10 = `009-ci-cd` es la fase en curso (spec **ACTIVE**). Ejecuta los bloques B0–B8 del plan:
-gobernanza, imagen endurecida, CI/CD con GHCR y SBOM, despliegue por digest en ACA con OIDC
-y rol de alcance único sobre `ca-thehouse-genai-u2`, verificación por revisiones/probes y
-rollback. Aplica los timeouts de producción de D18 (`GENAI_TIMEOUT_SECONDS=6`), activa el
-presupuesto (deuda 007-(b)), fija `Server` en el borde y documenta HSTS fuera de la app
-(D12), y deja para G09 la E2E de red Backend → GenAI (D11).
+G10 = `009-ci-cd` quedó **IMPLEMENTED** el 2026-11-22: imagen endurecida, CI/CD con GHCR y
+SBOM, despliegue por digest en ACA con OIDC y rol de alcance único, verificación por
+revisiones/probes con gate de tráfico exclusivo y rollback probado. Evidencia en
+`specs/009-ci-cd/evidence.md`. **No hay ninguna spec ACTIVE.**
 
-G09 = `010-integration-thehouse` sigue `PLANNED`: contratos y operación con Backend,
-cerrando `008-testing` con contract tests y E2E en staging. Quedan como deuda para esa fase
-o posteriores la capa de pago de Gemini con tope de gasto (D13, deuda 004-(b)), mTLS
-(005-D2), la agregación de métricas y el cupo global (007-(a), deuda (a) de 005) y la
-recalibración de SLOs (007-(d)).
+**Próximo paso: G09 = `010-integration-thehouse`**, que incluye cerrar `008-testing`
+(contract tests, corpus de seguridad, cobertura y E2E en staging). Contratos y operación con
+Backend, incluida la E2E de red Backend → GenAI (D11). Quedan como deuda para esa fase o
+posteriores la capa de pago de Gemini con tope de gasto (deuda 2), mTLS (005-D2), la
+agregación de métricas y el cupo global (deuda 1), la recalibración de SLOs (007-(d)) y el
+warning de `TestClient` (deuda 6). Antes de la demo hay que recordar el vencimiento de los
+créditos de Azure (deuda 3).

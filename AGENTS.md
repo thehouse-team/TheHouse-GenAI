@@ -11,13 +11,14 @@ otros repositorios de TheHouse; este contexto es el contrato de integración ini
 - Implementar únicamente la spec activa. La spec activa es la marcada como `ACTIVE` en
   `memoria.md`.
 - No implementar endpoints de specs en estado `PLANNED` ni nuevos proveedores LLM reales;
-  el adaptador real existe desde `011-llm-provider`. La spec activa es `009-ci-cd` (G10),
-  así que el `Dockerfile`, el pipeline y el despliegue sí pueden implementarse en esta fase.
+  el adaptador real existe desde `011-llm-provider`. `009-ci-cd` (G10) ya está
+  `IMPLEMENTED`: autorizó el `Dockerfile`, el pipeline y el despliegue. No hay spec
+  `ACTIVE` en este momento; la siguiente es `010-integration-thehouse` (G09).
 - No calcular Smart Match, consultar propiedades ni duplicar lógica del Backend.
 - No incluir Mobile, autenticación de usuarios ni secretos reales.
 - No añadir Docker, bases de datos ni servicios externos sin una spec aprobada. Se exceptúan
   el `Dockerfile` y el `.dockerignore` de despliegue autorizados por la enmienda 1.2 y la
-  spec `009-ci-cd` (ACTIVE); siguen prohibidos `docker-compose` y las dependencias nuevas
+  spec `009-ci-cd` (IMPLEMENTED); siguen prohibidos `docker-compose` y las dependencias nuevas
   en `pyproject.toml` con este fin.
 - No registrar tokens, API keys, passwords, cuerpos de request ni PII en logs.
 - No devolver stack traces ni mensajes internos al cliente.

@@ -20,11 +20,11 @@ G08 (`004-natural-language-search`) quedó **IMPLEMENTADO**: `parse-search` conv
 consulta en filtros validados, con la misma autenticación, moderación, PII y métricas que
 `explain-match`.
 
-**G10 (`009-ci-cd`) está en curso.** Prepara la imagen de despliegue y el pipeline para
-publicarla en GHCR y desplegarla por digest en Azure Container Apps con OIDC, ingreso
-interno y rollback por revisiones. La constitución 1.2 autoriza el `Dockerfile` y el
-`.dockerignore` exclusivamente para la imagen de despliegue; no se añade `docker-compose`
-ni dependencias nuevas al proyecto.
+**G10 (`009-ci-cd`) quedó IMPLEMENTADO.** El servicio está desplegado en Azure Container
+Apps (`ca-thehouse-genai-u2`) con **ingreso interno, solo HTTPS**: no tiene endpoint
+público y el Backend lo llama dentro del mismo entorno. La constitución 1.2 autoriza el
+`Dockerfile` y el `.dockerignore` exclusivamente para la imagen de despliegue; no se añade
+`docker-compose` ni dependencias nuevas al proyecto.
 
 G02 define el puerto `GenerativeAiProvider`, sus DTOs inmutables, la taxonomía de
 errores, el guard central de timeout y límite de entrada, un `FakeProvider`
@@ -200,6 +200,26 @@ ruff check .
 mypy src
 pytest
 ```
+
+## Despliegue y CD (G10)
+
+El pipeline publica la imagen en GHCR con un tag inmutable por SHA y el despliegue usa
+siempre el **digest** publicado (nunca `latest`). El job de despliegue pertenece al entorno
+protegido `production` de GitHub: autenticación OIDC, aprobación requerida, restringido a
+`main` y un rol personalizado con permisos mínimos sobre la Container App. La verificación
+espera a la revisión activa y sana, exige que reciba el 100 % del tráfico y que no quede
+otra revisión activa con tráfico; cualquier desvío es un reintento, no un error.
+
+El runbook de promociones, rotación de claves y rollback está en
+`specs/009-ci-cd/spec.md` (Apéndice B). El rollback se hace redesplegando el último digest
+bueno con el workflow `Rollback GenAI deployment` (también con aprobación), porque la app
+usa `activeRevisionsMode: Single`: nunca se reactiva una revisión antigua. Los secretos se
+gestionan dentro de Azure Container Apps y fuera del repositorio; no se publican claves ni
+URLs con credenciales.
+
+Escalado: `minReplicas=0`, `maxReplicas=1` y una regla HTTP de 10 peticiones concurrentes
+(política de costo $0). La primera petición tras escalar a cero puede tardar más; está
+cubierta por el fallback `generated=false` y el timeout de 6 s frente a los 8 s del Backend.
 
 ## Documentación de proyecto
 

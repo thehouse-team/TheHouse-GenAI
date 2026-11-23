@@ -27,6 +27,7 @@ _SPEC.loader.exec_module(_MODULE)
 parse_revision = _MODULE.parse_revision
 is_failed = _MODULE.is_failed
 is_ready = _MODULE.is_ready
+traffic_is_settled = _MODULE.traffic_is_settled
 main = _MODULE.main
 RevisionParseError = _MODULE.RevisionParseError
 
@@ -93,6 +94,21 @@ def _write(tmp_path: Path, payload: dict[str, Any]) -> Path:
     return path
 
 
+def _revision_entry(name: str, active: bool, traffic: int) -> dict[str, Any]:
+    """One entry of `az containerapp revision list -o json` (no secrets)."""
+
+    return {
+        "name": name,
+        "properties": {"active": active, "trafficWeight": traffic},
+    }
+
+
+def _write_list(tmp_path: Path, entries: list[dict[str, Any]]) -> Path:
+    path = tmp_path / "revisions.json"
+    path.write_text(json.dumps(entries), encoding="utf-8")
+    return path
+
+
 def test_parse_revision_extracts_every_gated_field() -> None:
     status = parse_revision(_revision())
 
@@ -102,8 +118,10 @@ def test_parse_revision_extracts_every_gated_field() -> None:
     assert status.running_state == "Running"
     assert status.health_state == "Healthy"
     assert status.replicas == 1
+    assert status.traffic_weight == 100
     assert status.image == IMAGE
     assert REVISION_NAME in status.describe()
+    assert "traffic=100" in status.describe()
     assert IMAGE in status.describe()
 
 
@@ -278,3 +296,90 @@ def test_parse_revision_rejects_missing_template() -> None:
 
     with pytest.raises(RevisionParseError, match=r"\$\.properties\.template must be an object"):
         parse_revision(payload)
+
+
+# --- B7/B8: traffic cutover gate ------------------------------------------------------
+
+
+@pytest.mark.parametrize("traffic", [0, 50, 99, None, "many", 101, True])
+def test_partial_or_missing_traffic_is_only_a_wait(traffic: Any, tmp_path: Path) -> None:
+    path = _write(tmp_path, _revision(properties={"trafficWeight": traffic}))
+
+    assert main([str(path), "--expected", IMAGE]) == 1
+
+
+def test_list_with_another_active_revision_with_traffic_waits(
+    tmp_path: Path, capsys: Any
+) -> None:
+    """The real transition window: 0000006 and 0000007 both active with traffic."""
+
+    path = _write(tmp_path, _revision())
+    revisions = _write_list(
+        tmp_path,
+        [
+            _revision_entry("ca-thehouse-genai-u2--0000006", True, 100),
+            _revision_entry(REVISION_NAME, True, 100),
+        ],
+    )
+
+    assert main([str(path), "--expected", IMAGE, "--revisions-json", str(revisions)]) == 1
+    output = capsys.readouterr().out
+    assert "WARNING: other active revision(s) still carry traffic" in output
+    assert "0000006" in output
+    assert "NOT_READY" in output
+
+
+def test_list_after_cutover_verifies_when_others_are_stopped(tmp_path: Path) -> None:
+    """The real settled state: 0000005/0000006 stopped at 0%, new revision at 100%."""
+
+    path = _write(tmp_path, _revision())
+    revisions = _write_list(
+        tmp_path,
+        [
+            _revision_entry("ca-thehouse-genai-u2--0000005", False, 0),
+            _revision_entry("ca-thehouse-genai-u2--0000006", False, 0),
+            _revision_entry(REVISION_NAME, True, 100),
+        ],
+    )
+
+    assert main([str(path), "--expected", IMAGE, "--revisions-json", str(revisions)]) == 0
+
+
+@pytest.mark.parametrize("payload", [{}, "not-a-list", [42]])
+def test_unexpected_revision_list_waits_instead_of_failing(
+    payload: Any, tmp_path: Path
+) -> None:
+    path = _write(tmp_path, _revision())
+    revisions = tmp_path / "revisions.json"
+    revisions.write_text(json.dumps(payload), encoding="utf-8")
+
+    assert main([str(path), "--expected", IMAGE, "--revisions-json", str(revisions)]) == 1
+
+
+def test_unreadable_revision_list_waits_instead_of_failing(tmp_path: Path) -> None:
+    path = _write(tmp_path, _revision())
+
+    assert (
+        main(
+            [
+                str(path),
+                "--expected",
+                IMAGE,
+                "--revisions-json",
+                str(tmp_path / "missing.json"),
+            ]
+        )
+        == 1
+    )
+
+
+def test_traffic_is_settled_accepts_string_boolean_and_weight() -> None:
+    entries = [
+        _revision_entry(REVISION_NAME, True, 100),
+        {
+            "name": "ca-thehouse-genai-u2--0000004",
+            "properties": {"active": "false", "trafficWeight": "0"},
+        },
+    ]
+
+    assert traffic_is_settled(entries, REVISION_NAME) == (True, ())

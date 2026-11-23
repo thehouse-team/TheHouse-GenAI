@@ -1,6 +1,6 @@
 # 009-ci-cd — CI/CD y despliegue
 
-- **Estado:** ACTIVE (plan aprobado el 2026-11-18)
+- **Estado:** IMPLEMENTED (plan aprobado el 2026-11-18; cerrado el 2026-11-22)
 - **Depende de:** 001-foundation, 002-provider-abstraction, 003-smart-match-explanation,
   004-natural-language-search, 005-security, 006-moderation, 007-observability, 008-testing,
   011-llm-provider
@@ -89,21 +89,21 @@ CI. Ningún bloque de esta spec asume ejecución local de Docker.
 
 ## Criterios de aceptación
 
-- [ ] CI actual en verde y bloqueante, sin cambios en sus tres gates.
-- [ ] `.dockerignore` y `Dockerfile` construidos y probados en CI, sin Docker local.
-- [ ] Imagen base fijada por digest verificado y registrado con fuente y fecha.
-- [ ] Dependencias con hashes y test de deriva entre `pyproject.toml` y el lock.
-- [ ] PR construye y escanea sin publicar; `main` publica por SHA y digest con SBOM.
-- [ ] Todas las acciones fijadas por SHA de release oficial, sin valores de memoria.
-- [ ] OIDC con federated credential del entorno `production` y rol de alcance único.
-- [ ] Bicep aplicado por el usuario; CI solo actualiza imagen y gestiona revisiones.
+- [x] CI actual en verde y bloqueante, sin cambios en sus tres gates.
+- [x] `.dockerignore` y `Dockerfile` construidos y probados en CI, sin Docker local.
+- [x] Imagen base fijada por digest verificado y registrado con fuente y fecha.
+- [x] Dependencias con hashes y test de deriva entre `pyproject.toml` y el lock.
+- [x] PR construye y escanea sin publicar; `main` publica por SHA y digest con SBOM.
+- [x] Todas las acciones fijadas por SHA de release oficial, sin valores de memoria.
+- [x] OIDC con federated credential del entorno `production` y rol de alcance único.
+- [x] Bicep aplicado por el usuario; CI solo actualiza imagen y gestiona revisiones.
 - [x] Ingreso interno HTTPS, escalado 0→1 con regla HTTP, probes, secretos y variables
       verificados (what-if y comprobación real del 2026-11-19).
 - [x] Gating por revisión/probes (tolerante a 0 réplicas) y verificación `exec` en GenAI
       documentada y ejecutada.
-- [ ] Rollback por revisión probado y registrado.
-- [ ] `ruff check .`, `mypy src`, `pytest` y `git diff --check` en verde.
-- [ ] Evidencia real registrada antes de marcar IMPLEMENTED.
+- [x] Rollback por revisión probado y registrado (2026-11-22).
+- [x] `ruff check .`, `mypy src`, `pytest` y `git diff --check` en verde.
+- [x] Evidencia real registrada antes de marcar IMPLEMENTED.
 
 ## Seguridad y privacidad
 
@@ -143,7 +143,7 @@ agregación global de métricas y presupuesto, la creación de un entorno `stagi
 cambio en los contratos de la API. Por la política de costo $0 del equipo, Gemini **permanece
 en la capa gratuita**: queda derogada la recomendación anterior de crear un proyecto de pago
 con tope de gasto (que figuraba en 011 y en la deuda de 004); la consecuencia de privacidad
-está documentada en la sección «Política de costo $0» de este archivo. Las decisiones D1–D20
+está documentada en la sección «Política de costo $0» de este archivo. Las decisiones D1–D27
 están en `plan.md` y en `memoria.md`.
 
 ## Apéndice A — Runbook de publicación en GHCR (B4)
@@ -315,8 +315,15 @@ con `az containerapp revision show ... -o json` y pasa el archivo a
 falta un dato estructural (por ejemplo la imagen) o hay un fallo explícito documentado.
 Los estados transitorios o desconocidos (incluido `healthState` nulo con réplicas durante el
 arranque) son un aviso y un reintento, no un error. Cada intento registra el estado completo y
-al agotarse se imprime el último. El parser, sus reglas y un JSON de ejemplo están cubiertos
-por `tests/test_revision_status.py` (sin red).
+al agotarse se imprime el último.
+
+La verificación exige además `properties.trafficWeight == 100` en la revisión nueva y, con
+`--revisions-json` (salida de `az containerapp revision list -o json`, leída de disco y nunca
+impresa), que ninguna otra revisión activa conserve tráfico. Un peso parcial o ausente y la
+presencia de otra revisión activa con tráfico son ESPERAR (código 1), nunca fatal; así se evita
+aprobar durante la ventana de transición observada en el rollback del 2026-11-22. El parser,
+sus reglas y ejemplos reales están cubiertos por `tests/test_revision_status.py` (sin red).
+`az containerapp update` usa `-o none` para no volcar el JSON completo de la app en el log.
 
 ### 5. Rollback (coherente con `activeRevisionsMode: Single`)
 
@@ -331,9 +338,10 @@ La vía operativa de B6 es el workflow `rollback.yml` (`workflow_dispatch`), que
 input `image_digest` con formato exacto
 `ghcr.io/thehouse-team/thehouse-genai@sha256:<64 hex>`, usa el mismo entorno protegido
 `production` (aprobación requerida), comprueba que esa imagen no es ya la activa, redespliega
-por `az containerapp update --image` y aplica la misma verificación: revisión activa,
-`provisioningState=Provisioned`, `runningState` no fallido, digest exacto y, solo si hay al
-menos 1 réplica, `healthState=Healthy`. El resumen del job de despliegue registra siempre la
+por `az containerapp update --image -o none` y aplica la misma verificación: revisión activa,
+`provisioningState=Provisioned`, `runningState` no fallido, digest exacto, `trafficWeight=100`,
+sin otra revisión activa con tráfico y, solo si hay al menos 1 réplica, `healthState=Healthy`.
+El resumen del job de despliegue registra siempre la
 imagen anterior para alimentar este workflow. El reaplicado manual del Bicep descrito abajo
 sigue siendo válido como último recurso, con la advertencia del paso 6.
 

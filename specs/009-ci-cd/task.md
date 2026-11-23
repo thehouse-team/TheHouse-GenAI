@@ -1,9 +1,10 @@
 # Tareas — 009-ci-cd CI/CD y despliegue
 
-- **Estado:** ACTIVE (plan aprobado el 2026-11-18)
+- **Estado:** IMPLEMENTED (plan aprobado el 2026-11-18; cerrado el 2026-11-22)
 
-> Trabajar solo en las tareas de este archivo, en la rama `feature/deployment`, y con los
-> gates en verde antes de cada commit. Las decisiones D1–D14 están en `plan.md`.
+> Trabajo realizado en las ramas `feature/deployment`, `feature/deployment-cd` y
+> `feature/close-ci-cd`, con los gates en verde antes de cada commit. Las decisiones D1–D27
+> están en `plan.md` y en `memoria.md`.
 
 ## B0 — Gobernanza
 
@@ -11,7 +12,8 @@
 - [x] Enmienda 1.2 y activación de 009 en `memoria.md`.
 - [x] `AGENTS.md` alineado con la spec activa y la excepción de Docker.
 - [x] `README.md` con G10 en curso.
-- [x] Los 5 archivos de `specs/009-ci-cd/` en estado ACTIVE con plan y decisiones.
+- [x] Los 5 archivos de `specs/009-ci-cd/` activados en B0 con plan y decisiones (hoy
+      IMPLEMENTED).
 - [x] Decisión D14 documentada con fuentes oficiales de Microsoft Learn.
 - [x] Gates en verde y commit `docs: activate spec 009 with constitution amendment 1.2`.
 
@@ -30,7 +32,7 @@
 - [x] Usuario no root, sin secretos, solo `src/` y lo necesario, `--no-server-header`.
 - [x] Sin `HEALTHCHECK` y con `EXPOSE 8000`.
 - [x] Tests de texto del Dockerfile y del `.dockerignore`.
-- [ ] Sin commit y sin avanzar a B3 (según instrucción).
+- [x] Sin Docker local: la imagen se construyó y probó en CI; ver `evidence.md`.
 
 ## B3 — CI de imagen
 
@@ -46,7 +48,7 @@
 - [x] `.github/dependabot.yml` con docker, pip y github-actions y cooldown de 7 días.
 - [x] Todas las acciones fijadas por SHA de 40 hex verificado en release oficial.
 - [x] Tests de texto del workflow, dependabot y permisos mínimos.
-- [ ] Sin commit y sin avanzar a B4 (según instrucción).
+- [x] Verificado en CI (run 44464597319: build, smoke y SBOM; escaneo corregido); ver `evidence.md`.
 
 ## B4 — Publicación y CD
 
@@ -56,17 +58,17 @@
 - [x] La imagen publicada es exactamente la que pasó smoke y escaneo (`docker save`/`load`).
 - [x] Runbook: el paquete GHCR debe ser público y cómo verificarlo.
 - [x] Mejora del smoke: línea `OK ...` por cada verificación.
-- [ ] Job `deploy` en `production` con OIDC y aprobación requerida.
-- [ ] Rol personalizado con alcance solo sobre `ca-thehouse-genai-u2` (D14).
-- [ ] Bicep de la Container App y del rol; aplicación manual por el usuario.
+- [x] Job `deploy` en `production` con OIDC y aprobación requerida.
+- [x] Rol personalizado con alcance solo sobre `ca-thehouse-genai-u2` (D14).
+- [x] Bicep de la Container App y del rol; aplicación manual por el usuario.
 
 ## B5 — Configuración ACA
 
 - [x] Ingreso interno HTTPS, puerto 8000, 0.25 vCPU / 0.5 GiB, min=0 / max=1 con regla
       HTTP explícita de 10 concurrentes (política de costo $0, 2026-11-19).
-- [ ] Probes liveness, readiness y startup.
-- [ ] Secretos de ACA y variables de producción con D13.
-- [ ] Diagnostic settings a `log-thehouse-u2` y alertas sin acceso del CI a logs.
+- [x] Probes liveness, readiness y startup.
+- [x] Secretos de ACA y variables de producción con D13.
+- [x] Diagnostic settings a `log-thehouse-u2` y alertas sin acceso del CI a logs.
 
 ## B6 — Verificación y rollback
 
@@ -75,18 +77,21 @@
       por el operador (explain-match, parse-search y 401 sin clave).
 - [x] Workflow y runbook de rollback redesplegando el último digest bueno (no reactivar una
       revisión: `activeRevisionsMode` es `Single`), con validación de formato y aprobación.
-- [ ] Prueba real del rollback pendiente: ejecutar `rollback.yml` con el digest
-      `sha256:6411108f02043659bde838c1ae48362e3e9f5ed8ee33b59d08adc16939a9aa71`.
+- [x] Prueba real del rollback (2026-11-22): `rollback.yml` con `sha256:47670b63…` (revisión
+      `0000006`) y roll-forward con `sha256:a5e6051b…` (revisión `0000007`). Se planeó con
+      `6411108f…`, pero se ejecutó con el digest bueno más reciente.
 - [x] Mejora operativa: `http.request.completed` de `/health/*` con 200 bajado a DEBUG,
       errores y métricas conservados, con tests.
 
 ## B7 — Borde HTTP
 
-- [ ] `--no-server-header` verificado por test.
-- [ ] HSTS documentado en el borde, sin cambios en los headers de la aplicación.
+- [x] `--no-server-header` verificado por test (smoke del contenedor y tests de texto).
+- [x] HSTS documentado en el borde, sin cambios en los headers de la aplicación.
 
 ## B8 — Cierre
 
-- [ ] `checklist.md` y `evidence.md` con resultados reales.
-- [ ] Gates finales, sin secretos ni PII, PR con squash a `main`.
-- [ ] Cambiar estado a IMPLEMENTED solo al cumplir todo.
+- [x] `checklist.md` y `evidence.md` con resultados reales.
+- [x] Gates finales y sin secretos ni PII. No se hace commit ni PR (instrucción recibida);
+      los cambios quedan en `feature/close-ci-cd`. Los PRs #9 y #13–#19 ya se integraron
+      por squash a `main`.
+- [x] Estado de los 5 archivos de 009 cambiado a IMPLEMENTED.
