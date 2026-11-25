@@ -62,7 +62,8 @@ jobs:
             exit 1
           fi
 
-          az containerapp update --name "$app" --resource-group "$group" --image "$IMAGE_REF"
+          # -o none keeps the full app JSON (egress IPs, env names, ...) out of the log.
+          az containerapp update --name "$app" --resource-group "$group" --image "$IMAGE_REF" -o none
           echo "**Previous image (before rollback):** \`${previous}\`" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Wait for the new revision and verify the active digest
@@ -83,9 +84,14 @@ jobs:
             # JSON, never a multi-select -o tsv: knack prints one line per field.
             az containerapp revision show --name "$app" --resource-group "$group" \
               --revision "$revision" -o json > revision.json
+            # The list is read from disk only: it proves the cutover left no other
+            # active revision with traffic, so we never approve during a transition.
+            az containerapp revision list --name "$app" --resource-group "$group" \
+              -o json > revisions.json
             echo "attempt ${attempt}/${attempts}"
             rc=0
-            output="$(python3 .github/ci/revision_status.py revision.json --expected "$IMAGE_REF" 2>&1)" || rc=$?
+            output="$(python3 .github/ci/revision_status.py revision.json --expected "$IMAGE_REF" \
+              --revisions-json revisions.json 2>&1)" || rc=$?
             echo "$output"
             last_state="$(printf '%s\n' "$output" | grep -m1 '^revision=' || true)"
             if [[ "$rc" -eq 0 ]]; then

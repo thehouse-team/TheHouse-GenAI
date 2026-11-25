@@ -328,7 +328,8 @@ jobs:
           previous="$(az containerapp show --name "$app" --resource-group "$group" \
             --query properties.template.containers[0].image -o tsv)"
 
-          az containerapp update --name "$app" --resource-group "$group" --image "$image"
+          # -o none keeps the full app JSON (egress IPs, env names, ...) out of the log.
+          az containerapp update --name "$app" --resource-group "$group" --image "$image" -o none
 
           echo "**Digest:** \`${DIGEST}\`" >> "$GITHUB_STEP_SUMMARY"
           echo "**Previous image (for rollback):** \`${previous}\`" >> "$GITHUB_STEP_SUMMARY"
@@ -353,9 +354,14 @@ jobs:
             # so `read` would silently capture only the first one.
             az containerapp revision show --name "$app" --resource-group "$group" \
               --revision "$revision" -o json > revision.json
+            # The list is read from disk only: it proves the cutover left no other
+            # active revision with traffic, so we never approve during a transition.
+            az containerapp revision list --name "$app" --resource-group "$group" \
+              -o json > revisions.json
             echo "attempt ${attempt}/${attempts}"
             rc=0
-            output="$(python3 .github/ci/revision_status.py revision.json --expected "$expected" 2>&1)" || rc=$?
+            output="$(python3 .github/ci/revision_status.py revision.json --expected "$expected" \
+              --revisions-json revisions.json 2>&1)" || rc=$?
             echo "$output"
             last_state="$(printf '%s\n' "$output" | grep -m1 '^revision=' || true)"
             if [[ "$rc" -eq 0 ]]; then

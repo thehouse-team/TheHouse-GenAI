@@ -450,6 +450,33 @@ def test_rollback_uses_the_same_verification() -> None:
         assert token in block, token
 
 
+def test_deploy_and_rollback_do_not_dump_the_app_json() -> None:
+    cases = (
+        (CI_WORKFLOW, "deploy", '--image "$image"'),
+        (ROLLBACK_WORKFLOW, "rollback", '--image "$IMAGE_REF"'),
+    )
+    for path, job_name, image_token in cases:
+        block = _job_block(path.read_text(encoding="utf-8"), job_name)
+        updates = [line for line in block.splitlines() if "az containerapp update" in line]
+
+        assert len(updates) == 1, path
+        assert updates[0].rstrip().endswith("-o none"), updates[0]
+        assert image_token in updates[0]
+        assert "egress" not in updates[0]
+
+
+def test_both_workflows_require_exclusive_traffic_before_verifying() -> None:
+    for path in (CI_WORKFLOW, ROLLBACK_WORKFLOW):
+        text = path.read_text(encoding="utf-8")
+        assert "az containerapp revision list" in text, path
+        assert "-o json > revisions.json" in text, path
+        assert "--revisions-json revisions.json" in text, path
+
+    parser = REVISION_PARSER.read_text(encoding="utf-8")
+    assert "status.traffic_weight == FULL_TRAFFIC" in parser
+    assert "def traffic_is_settled" in parser
+
+
 def test_all_actions_in_both_workflows_are_pinned() -> None:
     for path in (CI_WORKFLOW, ROLLBACK_WORKFLOW):
         for line in path.read_text(encoding="utf-8").splitlines():

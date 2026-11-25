@@ -4,8 +4,14 @@ Standard library only. No network, no secrets. Used by the deploy and rollback w
 
 Exit codes: 0 = verified, 1 = not ready yet (retry), 2 = fatal. Fatal is reserved for
 explicit documented failures and missing/invalid structural data (name, image) or invalid
-JSON. Everything else -- including a null healthState while starting up and unknown enum
-values -- is a normal transition and only prints a warning.
+JSON. Everything else -- including a null healthState while starting up, unknown enum
+values and a traffic cutover still in progress -- is a normal transition and only prints a
+warning.
+
+The optional --revisions-json file is the output of `az containerapp revision list -o json`.
+It is used to require that the new revision owns 100% of the traffic and that no other
+revision is still active with traffic. Both conditions are readiness checks: while they are
+false the gate returns 1 (wait), never 2 (fatal).
 """
 
 from __future__ import annotations
@@ -31,6 +37,8 @@ RUNNING_FATAL = frozenset({"Failed", "Degraded", "ActivationFailed"})
 HEALTH_READY = frozenset({"Healthy", "None"})
 HEALTH_FATAL = frozenset({"Unhealthy"})
 
+FULL_TRAFFIC = 100
+
 KNOWN_PROVISIONING = PROVISIONING_READY | PROVISIONING_WAIT | PROVISIONING_FATAL
 KNOWN_RUNNING = (
     RUNNING_READY_ZERO | RUNNING_READY_REPLICAS | RUNNING_WAIT | RUNNING_FATAL
@@ -52,6 +60,7 @@ class RevisionStatus:
     running_state: str
     health_state: str
     replicas: int | None
+    traffic_weight: int | None
     image: str
     warnings: tuple[str, ...] = ()
 
@@ -60,12 +69,13 @@ class RevisionStatus:
 
         active = "unknown" if self.active is None else str(self.active).lower()
         replicas = "unknown" if self.replicas is None else str(self.replicas)
+        traffic = "unknown" if self.traffic_weight is None else str(self.traffic_weight)
         return (
             f"revision={self.revision} active={active} "
             f"provisioning={self.provisioning_state or '<empty>'} "
             f"running={self.running_state or '<empty>'} "
             f"health={self.health_state or '<empty>'} "
-            f"replicas={replicas} image={self.image}"
+            f"replicas={replicas} traffic={traffic} image={self.image}"
         )
 
 
@@ -99,6 +109,32 @@ def _state_text(
     return text
 
 
+def _is_active(value: Any) -> bool:
+    """Accept the JSON boolean and its string form, never a fabricated value."""
+
+    if isinstance(value, bool):
+        return value
+    return isinstance(value, str) and value.lower() == "true"
+
+
+def _traffic_weight(props: dict[str, Any], warnings: list[str]) -> int | None:
+    """Read a 0-100 traffic weight; an absent or odd value only means 'wait'."""
+
+    value = props.get("trafficWeight")
+    if isinstance(value, bool) or not isinstance(value, (int, str)):
+        warnings.append(f"unexpected trafficWeight={value!r}")
+        return None
+    try:
+        parsed = int(value)
+    except ValueError:
+        warnings.append(f"unexpected trafficWeight={value!r}")
+        return None
+    if 0 <= parsed <= FULL_TRAFFIC:
+        return parsed
+    warnings.append(f"unexpected trafficWeight={parsed}")
+    return None
+
+
 def parse_revision(payload: Any) -> RevisionStatus:
     """Extract gate fields, aborting only on missing/invalid structural data."""
 
@@ -108,10 +144,10 @@ def parse_revision(payload: Any) -> RevisionStatus:
     warnings: list[str] = []
 
     active_value = props.get("active")
-    if isinstance(active_value, bool):
-        active: bool | None = active_value
-    elif isinstance(active_value, str) and active_value.lower() in {"true", "false"}:
-        active = active_value.lower() == "true"
+    if _is_active(active_value) or (
+        isinstance(active_value, str) and active_value.lower() == "false"
+    ):
+        active: bool | None = _is_active(active_value)
     else:
         active = None
         warnings.append(f"unexpected active={active_value!r}")
@@ -146,6 +182,8 @@ def parse_revision(payload: Any) -> RevisionStatus:
             if replicas is None:
                 warnings.append(f"negative replicas={parsed}")
 
+    traffic = _traffic_weight(props, warnings)
+
     template = _as_mapping(props.get("template"), "$.properties.template")
     containers = template.get("containers")
     if not isinstance(containers, list) or not containers:
@@ -160,6 +198,7 @@ def parse_revision(payload: Any) -> RevisionStatus:
         running_state=running,
         health_state=health,
         replicas=replicas,
+        traffic_weight=traffic,
         image=image,
         warnings=tuple(warnings),
     )
@@ -177,11 +216,12 @@ def is_failed(status: RevisionStatus, expected_image: str) -> bool:
 
 
 def is_ready(status: RevisionStatus, expected_image: str) -> bool:
-    """Return True only with the verified exact image and consistent healthy states."""
+    """Return True only with the exact image, healthy states and all the traffic."""
 
     if not (
         status.active is True
         and status.provisioning_state in PROVISIONING_READY
+        and status.traffic_weight == FULL_TRAFFIC
         and status.image == expected_image
     ):
         return False
@@ -195,10 +235,57 @@ def is_ready(status: RevisionStatus, expected_image: str) -> bool:
     )
 
 
+def traffic_is_settled(payload: Any, expected_revision: str) -> tuple[bool, tuple[str, ...]]:
+    """Require sole active revision with traffic; any conflict is a normal transition.
+
+    Returns (settled, warnings). An unreadable or unexpected list cannot prove exclusivity,
+    so it is reported as not settled and the caller only waits for the next attempt.
+    """
+
+    warnings: list[str] = []
+    if not isinstance(payload, list):
+        warnings.append("revision list is not an array; cannot confirm traffic cutover")
+        return False, tuple(warnings)
+
+    conflicting: list[str] = []
+    for item in payload:
+        if not isinstance(item, dict):
+            warnings.append("unexpected revision entry; cannot confirm traffic cutover")
+            return False, tuple(warnings)
+        name = item.get("name")
+        props = item.get("properties")
+        if not isinstance(name, str) or not name.strip() or not isinstance(props, dict):
+            warnings.append("incomplete revision entry; cannot confirm traffic cutover")
+            return False, tuple(warnings)
+        if name == expected_revision or not _is_active(props.get("active")):
+            continue
+        weight = props.get("trafficWeight")
+        if isinstance(weight, bool) or not isinstance(weight, (int, str)):
+            continue
+        try:
+            parsed = int(weight)
+        except ValueError:
+            continue
+        if parsed > 0:
+            conflicting.append(name)
+
+    if conflicting:
+        warnings.append(
+            "other active revision(s) still carry traffic: " + ", ".join(sorted(conflicting))
+        )
+        return False, tuple(warnings)
+    return True, tuple(warnings)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("revision_json", type=Path, help="az revision show -o json output")
     parser.add_argument("--expected", required=True, help="exact ghcr.io/... @sha256 image")
+    parser.add_argument(
+        "--revisions-json",
+        type=Path,
+        help="az revision list -o json output, used to require exclusive traffic",
+    )
     args = parser.parse_args(argv)
 
     try:
@@ -215,13 +302,28 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr,
         )
         return 2
-    if is_ready(status, args.expected):
-        print("VERIFIED")
-        return 0
-    for warning in status.warnings:
-        print(f"WARNING: {warning}")
-    print("NOT_READY")
-    return 1
+    if not is_ready(status, args.expected):
+        for warning in status.warnings:
+            print(f"WARNING: {warning}")
+        print("NOT_READY")
+        return 1
+
+    if args.revisions_json is not None:
+        try:
+            revisions = json.loads(args.revisions_json.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+            print(f"WARNING: cannot read revision list, waiting for traffic: {exc}")
+            print("NOT_READY")
+            return 1
+        settled, warnings = traffic_is_settled(revisions, status.revision)
+        for warning in warnings:
+            print(f"WARNING: {warning}")
+        if not settled:
+            print("NOT_READY")
+            return 1
+
+    print("VERIFIED")
+    return 0
 
 
 if __name__ == "__main__":

@@ -1,6 +1,6 @@
 # Plan — 009-ci-cd CI/CD y despliegue
 
-- **Estado:** ACTIVE (plan aprobado el 2026-11-18)
+- **Estado:** IMPLEMENTED (plan aprobado el 2026-11-18; cerrado el 2026-11-22)
 - **Depende de:** 001, 002, 003, 004, 005, 006, 007, 008, 011
 - **Rama:** `feature/deployment`
 
@@ -41,6 +41,8 @@
 | D23 | HTTPS interno verificado el 2026-11-19 con certificado válido y payload exacto; `allowInsecure: false` en el Bicep y Backend llamando a `https://ca-thehouse-genai-u2`. |
 | D24 | Reaplicación del Bicep solo con el digest en ejecución, secretos del gestor de contraseñas y what-if previo; cambios esperados únicamente en `ingress.allowInsecure` y `template.scale`. |
 | D25 | Gemini sigue en capa gratuita: en ese modo Google puede usar el contenido, por lo que se refuerza la redacción de PII antes del envío (spec 005). Quedan derogadas las recomendaciones de proyecto de pago de 011 y 004. |
+| D26 | `az containerapp update` usa `-o none` en `deploy` y `rollback`: el log no debe contener el JSON completo de la app (IPs de salida, nombres de variables). Las consultas previas siguen siendo puntuales con `-o tsv`. |
+| D27 | La verificación exige `trafficWeight=100` en la revisión nueva y ninguna otra revisión activa con tráfico, usando `az containerapp revision list -o json` leído de disco. Un peso parcial/ausente o una revisión ajena con tráfico es ESPERAR (1), nunca fatal (2), para no aprobar durante la transición. |
 
 ## Bloques de implementación
 

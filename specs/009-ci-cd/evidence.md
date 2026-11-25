@@ -1,8 +1,8 @@
 # Evidencia — 009-ci-cd CI/CD y despliegue
 
-- **Estado:** ACTIVE (plan aprobado el 2026-11-18)
-- **Fecha:** 2026-11-18
-- **Implementación:** en curso (B0 completado, B1 en ejecución)
+- **Estado:** IMPLEMENTED (plan aprobado el 2026-11-18; cerrado el 2026-11-22)
+- **Fecha:** 2026-11-22
+- **Implementación:** completa (B0–B8; CD verificado en CI #39 y rollback probado)
 
 ## Bloque B0 — Gobernanza
 
@@ -282,8 +282,8 @@ línea del pin).
 
 Hecho registrado el 2026-11-19: los bloques B0–B3 de esta spec entraron a `main` en el PR
 #9 de forma anticipada, mediante un merge de un compañero sobre un borrador. La spec 009
-sigue **ACTIVE**; G10 continúa en la rama `feature/deployment-cd`, creada desde `main`
-actualizado.
+sigue **ACTIVE** en esa fecha (hoy IMPLEMENTED); G10 continuó en la rama
+`feature/deployment-cd`, creada desde `main` actualizado.
 
 ## Primera ejecución real del job `image` (PR #9, run 44464597319)
 
@@ -1011,6 +1011,95 @@ Tests nuevos/ajustados en `tests/test_revision_status.py`: el caso real (réplic
 imagen distinta al digest tras `Provisioned` da 2; los dos casos reales anteriores siguen
 dando 0. `tests/test_ci_security.py` comprueba que ambos workflows imprimen el último estado.
 
+## Cuarto despliegue real: CD verificado en CI #39 (PR #19, 2026-11-22)
+
+Tras el merge de PR #19 (`ac2b37bfe480a6ee51a44a74cd9f44c9eeb91295`, *ci: treat transient
+revision states as wait instead of fatal*), el push a `main` completó el despliegue
+continuo sin intervención manual:
+
+- **Login OIDC:** correcto con la federated credential `github-production-ids` y el rol
+  personalizado `TheHouse GenAI Deployer` (5 acciones, solo sobre `ca-thehouse-genai-u2`).
+- **Despliegue por digest:** `az containerapp update` con
+  `ghcr.io/thehouse-team/thehouse-genai@sha256:a5e6051b4898dc7d4708317e19d30f2977cb9dce7fdfc5c8ddebdc4cce19e885`
+  (imagen publicada por `publish` con procedencia y SBOM firmados, sin tag mutable).
+- **Gating con reintentos:** intentos 1–3 con `runningState=Activating` y
+  `healthState=None` → `NOT_READY` (código 1: WARNING, reintento, sin abortar); intento 4
+  con `runningState=RunningAtMaxScale` y `healthState=Healthy` → `VERIFIED` (código 0).
+  Revisión `ca-thehouse-genai-u2--0000005`.
+- Sin rollback automático ni escalamiento de permisos. El log conserva solo el estado
+  parseado de la revisión, no el JSON completo de la app.
+
+## Historial de revisiones (`az containerapp revision list --all`)
+
+| Revisión | Imagen (commit) | Origen | Resultado |
+| --- | --- | --- | --- |
+| `okuxih9` | `6411108f` | Bicep manual (2026-11-19) | Active/Healthy, primer despliegue |
+| `0000001` | `6411108f` | `az containerapp update --min-replicas 0` (2026-11-19) | Política de costo $0 |
+| `0000002` | `bb106ef6` | PR #16 | Falló la verificación por el consumo de `-o tsv` |
+| `0000003` | `45b4e6d9` | PR #17 | Falló por falta de checkout del parser en el runner |
+| `0000004` | `47670b63` | PR #18 | Falló por `healthState` nulo con réplica (estado transitorio) |
+| `0000005` | `a5e6051b` | PR #19 / CI #39 | **VERIFIED** |
+
+Cada fallo de verificación se debió al gate, no a la imagen ni a los permisos: el
+despliegue y la lectura funcionaron en los cuatro casos; las correcciones quedan
+registradas en las secciones «Primer despliegue real», «Segundo despliegue real» y
+«Tercer despliegue real» de este archivo.
+
+## Prueba real del rollback en producción (2026-11-22)
+
+Workflow `Rollback GenAI deployment` (`workflow_dispatch`), lanzado desde el entorno
+protegido `production` con aprobación requerida, usando el digest bueno conocido:
+
+1. **Rollback:** el redespliegue de `sha256:47670b63…` creó la revisión `0000006`,
+   verificada (activa, provisionada, digest exacto, sana).
+2. **Roll-forward:** el redespliegue de `sha256:a5e6051b…` creó la revisión `0000007`,
+   verificada con el mismo criterio.
+3. **Ventana de transición:** consultadas justo después, `0000006` y `0000007` aparecían
+   activas a la vez.
+4. **Estabilizado 2 minutos después:** `0000005` y `0000006` `Stopped` con `trafficWeight`
+   `0`; `0000007` activa con `trafficWeight` `100` y `RunningAtMaxScale`.
+
+Conclusión: el rollback por redespliegue funciona y respeta `activeRevisionsMode: Single`
+(nunca se reactivó una revisión antigua). El punto 3 motivó el ajuste final (b): exigir el
+100 % del tráfico en la revisión nueva y ninguna otra revisión activa con tráfico,
+tratando cualquier desvío como ESPERAR.
+
+## Reaplicación del Bicep con el digest en ejecución (2026-11-22)
+
+El operador consultó el digest en ejecución y lo pasó como `imageDigest` a
+`infra/genai.bicep`, tomó los secretos del gestor de contraseñas y ejecutó un `what-if`
+previo, según el runbook (Apéndice B, sección 6 de `spec.md`).
+
+- **Cambios reales del what-if:** `configuration.ingress.allowInsecure` `true` → `false`,
+  regla de escalado `http-concurrency` y secretos.
+- **Ruido explicado (sin cambio efectivo):** probes reordenadas, variables de entorno
+  expresadas por expresión y valores por defecto `exposedPort`, `traffic`,
+  `maxInactiveRevisions` y `workloadProfileName`. Sin cambios al Backend ni a la imagen.
+- **Resultado:** `allowInsecure=false`, ingreso interno, `minReplicas=0`, `maxReplicas=1`,
+  regla `http-concurrency` y revisión `0000008`.
+- **Secretos:** claves de servicio y de métricas **rotadas** en esa aplicación (aún no
+  compartidas con el Backend) y borradas de la sesión al terminar. No hay secretos
+  versionados.
+
+## Ajustes finales B7–B8 (con tests)
+
+**a) Salida mínima en `deploy` y `rollback`.** `az containerapp update` no fijaba formato y
+volcaba el JSON completo de la app (IPs de salida, nombres de variables, etc.). Ambos
+workflows usan ahora `-o none`, así que el log conserva solo el resumen (digest, imagen
+anterior) y la línea parseada de la revisión. Las consultas previas ya eran puntuales
+(`--query properties.template.containers[0].image -o tsv` y `properties.latestRevisionName
+-o tsv`). Test: `test_deploy_and_rollback_do_not_dump_the_app_json`.
+
+**b) Gate de tráfico exclusivo.** `.github/ci/revision_status.py` exige además
+`properties.trafficWeight == 100` en la revisión nueva y, mediante `--revisions-json`
+(salida de `az containerapp revision list -o json`), que ninguna otra revisión activa
+conserve tráfico. Un peso parcial/ausente u otra revisión activa con tráfico devuelve
+**1 = ESPERAR** con `WARNING`, nunca 2 = fatal; los errores fatales siguen reservados a
+estados explícitos de fallo y datos estructurales ausentes. Ambos workflows pasan el
+listado desde disco, sin imprimirlo. Tests: `tests/test_revision_status.py` (casos reales
+de transición `0000006`/`0000007` y de cutover estabilizado, pesos ausentes, listados
+inválidos o ilegibles) y `test_both_workflows_require_exclusive_traffic_before_verifying`.
+
 ## Bloques B2–B8
 
 - [x] Digest de `python:3.12-slim` con fecha y URL de la fuente oficial (B2):
@@ -1026,24 +1115,98 @@ dando 0. `tests/test_ci_security.py` comprueba que ambos workflows imprimen el �
   moderación se resuelve desde el árbol `src/` mediante `Path(__file__).with_name(...)`,
   por lo que funciona con `PYTHONPATH=/app/src`. No se abrió ni citó su contenido.
   Nada depende de que el paquete esté instalado.
-- [ ] Se muestran solo los tests de texto del Dockerfile; la construcción real se valida
-  en CI en B3.
+- [x] Construcción, smoke, escaneo y SBOM ejecutados en CI (PR #9, run 44464597319) y en
+  los publish posteriores; no se asumió Docker local.
 - [x] SHA de cada acción con fecha y URL de su release oficial (B3); `azure/login` añadido
   en B6 con su tabla verificada más arriba.
 - [x] Salidas de build, escaneo y SBOM en PR y en `main` (B3/B4).
 - [x] Digest publicado en GHCR (CI #31) y revisión de ACA creada (B4/B5).
-- [ ] Resultado del gating automático por revisión y probes (B6): implementado y cubierto
-  por tests de texto; pendiente de su primera ejecución real en un push a `main`. La
-  comprobación manual equivalente ya está registrada arriba (revisión `okuxih9`).
+- [x] Resultado del gating automático por revisión y probes (B6): CI #39, revisión
+  `0000005`, intentos 1–3 `NOT_READY` e intento 4 `VERIFIED`, registrado arriba.
 - [x] Verificación `exec` dentro de GenAI contra `localhost:8000` (B6).
-- [ ] Revisiones antes y después del rollback probado (B6): workflow listo; pendiente de
-  ejecutarse una vez con el digest `6411108f…` como entrada.
-- [x] Resultados finales de los gates y `git diff --check` (B8).
+- [x] Revisiones antes y después del rollback probado (B6): `0000006` y `0000007`
+  registradas arriba, con la transición de tráfico explicada.
+- [x] Resultados finales de los gates y `git diff --check` (B8), registrados abajo.
 
-## Evidencia requerida al cerrar
+## Cierre SDD (2026-11-22)
 
-- [ ] Criterios de aceptación verificados (queda la prueba real del rollback y del gating
-  automático en el primer push a `main`).
+### Gates finales (salida real, rama `feature/close-ci-cd`)
+
+```text
+$ .venv\Scripts\python.exe -m ruff check .
+All checks passed!
+
+$ .venv\Scripts\python.exe -m mypy src
+Success: no issues found in 36 source files
+
+$ .venv\Scripts\python.exe -m mypy --strict .github/ci/revision_status.py
+Success: no issues found in 1 source file
+
+$ .venv\Scripts\python.exe -m pytest
+1131 passed, 1 warning in 8.78s
+
+$ git diff --check
+(sin salida, código 0)
+```
+
+El único warning es el conocido `StarletteDeprecationWarning` de `TestClient` con `httpx`
+(deuda 008, no se introduce aquí).
+
+### Commits del periodo (todos por PR con squash a `main`)
+
+| PR | Commit | Asunto |
+| --- | --- | --- |
+| #9 | `197f4cc890433f28006476b448c8949077f471ac` | Feature/deployment (B0–B3, locks universales) |
+| #13 | `e0134ecd1127a6139791d556f11cc31986c32ef1` | publicación en GHCR con procedencia y SBOM |
+| #14 | `0a23fa87359bd33f5cb2bbfdc3af65acb922dd3d` | `subject-digest` separado en la attestation de SBOM |
+| #15 | `a7e0e5a1981e003471fe43b25c43f32680d8c522` | Bicep de la Container App y runbook OIDC (B5) |
+| #16 | `540e70463adc73485e73c902e118e0c6224cd756` | despliegue continuo con aprobación y rollback (B6) |
+| #17 | `04f9deece9574409876633bba3bf2831ec052f67` | parser de revisión en Python con fallo fatal (B6) |
+| #18 | `f79a28cf0cf484ff8b725d3de421c4afe8d29f23` | checkout antes de la verificación (B6) |
+| #19 | `ac2b37bfe480a6ee51a44a74cd9f44c9eeb91295` | estados transitorios como ESPERAR, no fatal (B6) |
+
+Cierre B7–B8: cambios sin commit en `feature/close-ci-cd`, por instrucción recibida.
+
+### Mapeo criterio de aceptación → test o evidencia
+
+| Criterio | Verificación |
+| --- | --- |
+| Gates actuales verdes y bloqueantes | `test_quality_gates_remain_blocking`; gates finales arriba |
+| `.dockerignore` y `Dockerfile` probados sin Docker local | `tests/test_deployment_artifacts.py`; smoke real en PR #9 (run 44464597319) |
+| Imagen base por digest verificado | B2: digest `5e2bdb1b…` con fuente y fecha, verificado de nuevo por el operador |
+| Dependencias con hashes y test de deriva | locks universales y `lock-drift` en CI; incidente PR #9 resuelto |
+| PR construye/escanea sin publicar; `main` publica con SBOM | `test_image_job_builds_without_publishing`, `test_publish_uses_immutable_sha_tag`; CI #29 |
+| Acciones fijadas por SHA de release oficial | `test_every_action_is_pinned_to_a_full_sha`, `test_all_actions_in_both_workflows_are_pinned`; tablas B3/B4/B6 |
+| OIDC con rol de alcance único | `test_deploy_logs_in_via_pinned_oidc_action_and_environment_vars`; federated credential `github-production-ids`, rol de 5 acciones |
+| Bicep aplicado por el usuario; CI solo imagen y revisiones | aplicación manual del 2026-11-19 y reaplicación del 2026-11-22; `test_infra_job_validates_bicep_without_credentials` |
+| Ingreso interno HTTPS, escalado 0→1, probes, secretos y variables | comprobación real del 2026-11-19 y reaplicación del 2026-11-22 (revisión `0000008`) |
+| Gating por revisión/probes y verificación `exec` | `test_deploy_waits_and_verifies_the_active_revision`, `tests/test_revision_status.py`; CI #39 y `exec` del 2026-11-19 |
+| Rollback probado | prueba real del 2026-11-22: `0000006` y `0000007`, registrada arriba |
+| Gates finales y `git diff --check` | salida real arriba |
+| Evidencia real antes de IMPLEMENTED | este archivo completo |
+
+### Incidentes y decisiones
+
+Incidentes cerrados, con detalle en las secciones correspondientes de este archivo: locks
+dependientes de la plataforma (PR #9), escaneo Trivy de `zlib1g` (parche en la imagen, sin
+`.trivyignore`), attestation de SBOM sin `subject-digest` (CI #27 → #29), lectura `-o tsv`
+multi-select (PR #16 → #17), checkout ausente en `deploy` (PR #17 → #18), `healthState`
+nulo con réplica y estados `Activating` (PR #18 → #19) y transición de tráfico en el
+rollback (ajuste B7–B8). Ninguno fue un fallo de la app, de permisos ni de la imagen.
+
+Las decisiones D1–D25 están en `plan.md` y en la sección «Decisiones tomadas en 009» de
+`memoria.md`. Se añaden dos decisiones de cierre:
+
+- **D26:** `az containerapp update` usa `-o none` en `deploy` y `rollback`; el log no debe
+  contener el JSON completo de la app (IPs de salida, nombres de variables).
+- **D27:** la verificación exige `trafficWeight=100` en la revisión nueva y ninguna otra
+  revisión activa con tráfico; cualquier desvío es ESPERAR (código 1), nunca fatal. El
+  listado de revisiones se lee de disco y no se imprime.
+
+### Evidencia requerida al cerrar
+
+- [x] Criterios de aceptación verificados (rollback y gating automático incluidos).
 - [x] Sin secretos, PII ni tokens en código, logs o fixtures.
-- [ ] Referencia al commit que cierra la spec: no se ha hecho commit (instrucción recibida).
-- [ ] Solo entonces cambiar el estado a IMPLEMENTED.
+- [x] No se hace commit: instrucción recibida; los cambios quedan en
+  `feature/close-ci-cd`.
+- [x] Los 5 archivos de 009 pasan a `IMPLEMENTED`.
