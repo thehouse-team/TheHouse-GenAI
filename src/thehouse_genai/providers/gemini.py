@@ -23,6 +23,7 @@ from typing import Any, Final
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
+from thehouse_genai.api.request_context import get_request_id
 from thehouse_genai.providers.base import (
     GenerativeAiRequest,
     GenerativeAiResponse,
@@ -319,6 +320,7 @@ class GeminiProvider:
                 "duration_ms": _elapsed_ms(started),
                 "prompt_chars": len(request.prompt),
                 "completion_chars": len(response.text),
+                "request_id": get_request_id(),
             },
         )
 
@@ -337,5 +339,6 @@ class GeminiProvider:
                 "error_code": error.code,
                 "duration_ms": _elapsed_ms(started),
                 "prompt_chars": len(request.prompt),
+                "request_id": get_request_id(),
             },
         )
