@@ -37,6 +37,14 @@ RUN apt-get update \
         zlib1g=1:1.3.dfsg+really1.3.1-1+deb13u1 \
     && rm -rf /var/lib/apt/lists/*
 
+# CVE-2026-124851 (HIGH): libzstd1 1.5.7+dfsg-1 has a vulnerability.
+# Pin the patched version from Debian 13 security.
+# Remove this layer when the pinned base digest already ships the fix.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends --only-upgrade \
+        libzstd1=1.5.7+dfsg-1+deb13u1 \
+    && rm -rf /var/lib/apt/lists/*
+
 RUN groupadd --gid 10001 app \
     && useradd --uid 10001 --gid app --no-create-home --shell /usr/sbin/nologin app
 
