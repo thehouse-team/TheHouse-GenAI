@@ -202,7 +202,10 @@ def _validate_explanation(
     mentioned = {service.lower() for service in request.property.services}
     mentioned.update(service.lower() for service in request.preferences.essential_services)
     lowered = text.lower()
-    if any(service in lowered and service not in mentioned for service in known):
+    if any(
+        re.search(rf"\b{re.escape(service)}\b", lowered) and service not in mentioned
+        for service in known
+    ):
         return "UNKNOWN_SERVICE"
 
     detection_text = _normalize_for_detection(lowered)
