@@ -24,7 +24,7 @@ def test_defaults_are_valid(monkeypatch: pytest.MonkeyPatch) -> None:
     assert settings.app_env == "local"
     assert settings.log_level == "INFO"
     assert settings.cors_origins == []
-    assert settings.genai_timeout_seconds == 15
+    assert settings.genai_timeout_seconds == 7.0
     assert settings.genai_max_input_chars == 4_000
 
 

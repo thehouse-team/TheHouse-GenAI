@@ -128,7 +128,7 @@ class Settings(BaseSettings):
     genai_provider: Literal["fake", "gemini"] | None = None
     genai_api_key: SecretStr | None = None
     genai_model: str | None = None
-    genai_timeout_seconds: float = Field(default=15.0, gt=0, le=120)
+    genai_timeout_seconds: float = Field(default=7.0, gt=0, le=120)
     genai_max_input_chars: int = Field(default=4_000, ge=1, le=100_000)
 
     @field_validator("genai_provider", mode="before")
