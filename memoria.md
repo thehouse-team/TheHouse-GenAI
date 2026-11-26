@@ -1,6 +1,6 @@
 # Memoria del proyecto — TheHouse GenAI
 
-Última actualización: 2026-11-22
+Última actualización: 2026-11-26
 
 ## Identidad
 
@@ -58,6 +58,84 @@ escalado 0→1 y regla `http-concurrency`). Cierre B7–B8: `-o none` en `update
 tráfico exclusivo (100 % en la revisión nueva, sin otra activa con tráfico; desvíos =
 ESPERAR). Decisiones D1–D27, evidencia y deudas registradas abajo. `008-testing` y
 `010-integration-thehouse` permanecen `PLANNED`.
+
+## Corrección G10 sobre 002 y 003 (2026-11-26)
+
+Autorización del usuario: corrección de G10 sobre las specs **IMPLEMENTED** 002 y 003,
+en la rama `fix/genai-resilience` creada desde `origin/main` (`89e7f8c`). No hay
+ninguna spec `ACTIVE`; 002 y 003 siguen `IMPLEMENTED` y `010-integration-thehouse`
+sigue `PLANNED`. No se hizo push y no se abrieron llaves ni secretos.
+
+### Hechos recibidos y verificados en el repositorio
+
+- **#21** (`16090f9`, autor IsaiAxel, 2026-11-24, «fix: prevent false unknown service
+  rejection»): cambió únicamente `application/explain_match.py` para envolver la
+  búsqueda de servicios conocidos en `\b`. No tocó ninguna spec ni añadió pruebas.
+  Quedó verificado que, con `services=["agua caliente"]`, el texto «agua caliente»
+  seguía disparando `UNKNOWN_SERVICE`.
+- **#22** (`89e7f8c`, autor IsaiAxel, 2026-11-25, «fix: bound GenAI provider latency for
+  NV-24»): bajó el default de `GENAI_TIMEOUT_SECONDS` de 15 a 7, añadió dos capas
+  `apt-get` en el `Dockerfile` (zlib1g y libzstd1), añadió `request_id` explícito en los
+  logs de `providers/gemini.py` vía `api.request_context` y actualizó el test de
+  configuración afectado. También versionó `git_diff.txt` y `test_output.txt`. No
+  actualizó ninguna spec; la única prueba fue el ajuste de un valor por defecto ya
+  existente, sin cobertura del cambio de logging.
+- **Evidencia de producción** (Log Analytics, 24–26 nov, según el reporte del operador):
+  4 de 19 llamadas a Gemini fallaron con `PROVIDER_UNAVAILABLE` en ~0.6 s y degradaron
+  a `explain_match.fallback` con `PROVIDER_ERROR`. La credencial y el modelo estaban
+  correctos (curl directo 5/5 = 200); son fallas pasajeras y no se reintentaban aunque
+  la taxonomía marca `retryable=True`. El mismo reporte cita las revisiones de ACA
+  `0000009` y `0000010`; el repositorio no contiene sus digests ni datos de tráfico,
+  así que no se inventan.
+- **`CVE-2026-124851`** verificado el 2026-11-26 en
+  `https://security-tracker.debian.org/tracker/CVE-2026-124851`: existe, afecta a
+  libzstd 1.5.1–1.5.7 y la entrada de `trixie (security)` fija
+  `1.5.7+dfsg-1+deb13u1`, que es exactamente la versión ya fijada en el `Dockerfile`.
+  El ID del comentario es correcto; no se cambió el `Dockerfile`.
+
+### Cambios y decisiones de la corrección
+
+- Bloque 1 (`fb67882`): `provider.call.failed` añade `http_status` (solo el número,
+  cuando hubo respuesta) o `transport_error` (`type(exc).__name__`, cuando fue
+  `httpx.HTTPError` sin respuesta); nunca mensaje, cuerpo ni cabeceras. Se eliminó el
+  import de `api.request_context` y los `request_id` explícitos del adaptador: la
+  correlación la sigue inyectando `RequestIdFilter` de `infrastructure/logging.py`.
+  La allowlist del logging incorpora `http_status` y `transport_error`.
+- Bloque 2 (`0f405a7`): `RetryingProvider` en `providers/` aplica **un** reintento solo
+  ante `ProviderUnavailableError`/`ProviderRateLimitError`; espera fija de 300 ms
+  inyectable (`sleep`) y reloj inyectable. No reintenta ante Auth, InvalidResponse ni
+  Timeout. Solo reintenta si el primer intento duró <2.5 s y el total cabe en
+  `GENAI_TIMEOUT_SECONDS + 1 s`; la factory lo envuelve con `GuardedProvider`, cuyo
+  timeout (7 s) es el límite real de la secuencia. Cada intento consume el presupuesto
+  diario: el caso de uso reserva el primero y el decorador reserva el reintento; sin
+  presupuesto no hay reintento. Evento `provider.call.retry` con `attempt`,
+  `error_code` y `request_id` (inyectado por el filtro del logger del decorador). No
+  se añadió ninguna etiqueta de métrica: los contadores existentes registran el
+  desenlace final de cada caso de uso y contar también cada intento duplicaría
+  `provider_calls_total`. La espera es configurable por parámetro del decorador, sin
+  variable de entorno nueva; los tests inyectan el sleep y no duermen.
+- Bloque 3 (`c7bc809`): `_validate_explanation` enmascara con espacios, de más largo a
+  más corto y con `\b` + `re.escape`, cada servicio recibido (propiedad + preferencias)
+  en el texto en minúsculas antes de buscar los `KNOWN_SERVICES` con `\b`. Así se
+  aceptan etiquetas compuestas recibidas sin confundir su prefijo con un servicio
+  inventado.
+- Bloque 4: se eliminan `git_diff.txt` y `test_output.txt` y se documentan los hechos
+  anteriores. Los specs 002 y 003 mantienen su estado `IMPLEMENTED`; la corrección se
+  registra en sus `evidence.md`/`checklist.md`, sin activar ninguna spec. La exclusión
+  original de reintentos de la spec 002 queda así derogada solo por esta corrección
+  autorizada, no por una spec nueva.
+
+### Gates de la corrección
+
+| Bloque | `ruff check .` | `mypy src` | `mypy --strict .github/ci/revision_status.py` | `pytest` |
+| --- | --- | --- | --- | --- |
+| 1 | `All checks passed!` | 36 archivos, sin errores | 1 archivo, sin errores | 1134 passed, 1 warning |
+| 2 | `All checks passed!` | 37 archivos, sin errores | 1 archivo, sin errores | 1149 passed, 1 warning |
+| 3 | `All checks passed!` | 37 archivos, sin errores | 1 archivo, sin errores | 1154 passed, 1 warning |
+| 4 | `All checks passed!` | 37 archivos, sin errores | 1 archivo, sin errores | 1154 passed, 1 warning |
+
+El único warning es el `StarletteDeprecationWarning` heredado de `TestClient` (deuda
+`008-testing`). `git diff --check` queda limpio.
 
 `004-natural-language-search` (G08) se cerró como **IMPLEMENTED** el 2026-11-18 sobre la
 rama `feature/natural-language-search`, con plan aprobado y las decisiones D1–D13 más los

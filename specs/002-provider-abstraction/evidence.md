@@ -95,3 +95,20 @@ mergear.
 - Logging estructurado de las llamadas al proveedor: spec 007.
 - Evaluación de proveedores y adaptador real: spec 011.
 - `StarletteDeprecationWarning` de `TestClient`: spec 008.
+
+## Corrección G10 (2026-11-26, rama `fix/genai-resilience`)
+
+Corrección autorizada sobre esta spec ya `IMPLEMENTED`; no cambia su estado ni activa
+otra spec. Los reintentos estaban excluidos del alcance original y quedan permitidos
+solo por esta corrección, documentada en `memoria.md`.
+
+| Bloque | Commit | Evidencia |
+| --- | --- | --- |
+| 1 | `fb67882` | `test_failure_log_records_the_error_code_without_detail` (http_status 429, sin cuerpo), `test_transport_failure_logs_only_the_exception_class` (solo `ConnectError`), `test_invalid_payload_logs_the_received_status`, `test_failure_log_keeps_request_id_without_a_provider_dependency` (request_id por `RequestIdFilter`, sin dependencia de `api`). |
+| 2 | `0f405a7` | `tests/test_retrying_provider.py` cubre 503→200 con 2 llamadas, 503→503 con fallback `PROVIDER_ERROR`, 401 y timeout con 1 llamada, primer intento lento sin reintento, deadline total y presupuesto agotado; `test_retry_log_records_attempt_and_error_code` y `test_retry_log_is_correlated_with_the_request` verifican el evento. La factory y la app quedan cubiertas en `test_provider_factory.py`. |
+
+Gates por bloque: `ruff check .` y `mypy --strict .github/ci/revision_status.py` sin
+hallazgos; `mypy src` sin errores (36/37 archivos); `pytest` 1134/1149 tests, sin red
+y con el único warning heredado de `TestClient`. La corrección no añadió etiquetas de
+métrica: `provider_calls_total` y `provider_errors_total` registran el desenlace final
+del caso de uso, por lo que contar cada intento duplicaría las series existentes.

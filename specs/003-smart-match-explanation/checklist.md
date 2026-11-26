@@ -52,3 +52,12 @@
 - [x] Evidencia registrada antes de marcar IMPLEMENTED.
 - [x] Decisión D18 de timeouts documentada en spec/plan/.env.example/memoria sin
       cambiar el default de `Settings`.
+
+## Corrección G10 (2026-11-26)
+
+- [x] Los servicios recibidos se enmascaran antes de buscar servicios conocidos, de
+      más largo a más corto, con `\b` y `re.escape`.
+- [x] Se aceptan etiquetas compuestas recibidas («agua caliente», «baño privado») y se
+      siguen rechazando servicios no recibidos («estacionamiento», «agua» suelto).
+- [x] «gastos» no se confunde con el servicio «gas».
+- [x] Gates en verde y evidencia registrada; spec sigue `IMPLEMENTED`.
