@@ -202,8 +202,15 @@ def _validate_explanation(
     mentioned = {service.lower() for service in request.property.services}
     mentioned.update(service.lower() for service in request.preferences.essential_services)
     lowered = text.lower()
+    # Backend may send labels outside the initial vocabulary ("agua caliente"). The
+    # model may echo them faithfully, so mask those received spans first, longest
+    # first: otherwise "agua" inside "agua caliente" looks like an invented service.
+    masked = lowered
+    for service in sorted(mentioned, key=lambda item: (-len(item), item)):
+        if service:
+            masked = re.sub(rf"\b{re.escape(service)}\b", " ", masked)
     if any(
-        re.search(rf"\b{re.escape(service)}\b", lowered) and service not in mentioned
+        re.search(rf"\b{re.escape(service)}\b", masked) and service not in mentioned
         for service in known
     ):
         return "UNKNOWN_SERVICE"
