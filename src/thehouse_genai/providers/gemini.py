@@ -9,8 +9,9 @@ that may open a socket. The test suite never reaches the network: the client is
 injected with a `httpx.MockTransport` double.
 
 Failures are normalized at the edge of the adapter: the HTTP status, the transport
-errors and the payload validation all become errors of the own taxonomy, without the
-vendor body, the headers or the credential ever reaching a message or a log line.
+errors and the payload validation all become errors of the own taxonomy. Only safe
+diagnostics (the numeric status or the exception class name) are logged as metadata;
+the vendor body, the headers and the credential never reach a message or a log line.
 """
 
 from __future__ import annotations
@@ -23,7 +24,6 @@ from typing import Any, Final
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
-from thehouse_genai.api.request_context import get_request_id
 from thehouse_genai.providers.base import (
     GenerativeAiRequest,
     GenerativeAiResponse,
@@ -187,21 +187,27 @@ class GeminiProvider:
         """
 
         started = perf_counter()
+        status_code: int | None = None
         error: ProviderError
         try:
             response = await self._post(request)
-            self._raise_for_status(response.status_code)
+            status_code = response.status_code
+            self._raise_for_status(status_code)
             result = self._parse_response(response)
         except httpx.TimeoutException as exc:
             error = ProviderTimeoutError()
-            self._log_failure(request, started, error)
+            self._log_failure(request, started, error, transport_error=type(exc).__name__)
             raise error from exc
         except httpx.HTTPError as exc:
             error = ProviderUnavailableError()
-            self._log_failure(request, started, error)
+            vendor_response = getattr(exc, "response", None)
+            if isinstance(vendor_response, httpx.Response):
+                self._log_failure(request, started, error, http_status=vendor_response.status_code)
+            else:
+                self._log_failure(request, started, error, transport_error=type(exc).__name__)
             raise error from exc
         except ProviderError as exc:
-            self._log_failure(request, started, exc)
+            self._log_failure(request, started, exc, http_status=status_code)
             raise
         self._log_success(request, started, result)
         if _has_deprecation_header(response):
@@ -320,7 +326,6 @@ class GeminiProvider:
                 "duration_ms": _elapsed_ms(started),
                 "prompt_chars": len(request.prompt),
                 "completion_chars": len(response.text),
-                "request_id": get_request_id(),
             },
         )
 
@@ -329,16 +334,20 @@ class GeminiProvider:
         request: GenerativeAiRequest,
         started: float,
         error: ProviderError,
+        *,
+        http_status: int | None = None,
+        transport_error: str | None = None,
     ) -> None:
-        """Record the failure metadata: never the vendor detail nor the credential."""
+        """Record failure metadata without the vendor body, headers or credential."""
 
-        logger.warning(
-            "provider.call.failed",
-            extra={
-                "provider": _PROVIDER_NAME,
-                "error_code": error.code,
-                "duration_ms": _elapsed_ms(started),
-                "prompt_chars": len(request.prompt),
-                "request_id": get_request_id(),
-            },
-        )
+        extra: dict[str, object] = {
+            "provider": _PROVIDER_NAME,
+            "error_code": error.code,
+            "duration_ms": _elapsed_ms(started),
+            "prompt_chars": len(request.prompt),
+        }
+        if http_status is not None:
+            extra["http_status"] = http_status
+        if transport_error is not None:
+            extra["transport_error"] = transport_error
+        logger.warning("provider.call.failed", extra=extra)

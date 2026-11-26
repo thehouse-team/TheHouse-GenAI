@@ -295,6 +295,44 @@ def test_rate_limit_rejection_is_counted() -> None:
     assert _count(app.state.metrics, MetricName.RATE_LIMIT_REJECTIONS_TOTAL) == 1
 
 
+def test_failure_log_keeps_request_id_without_a_provider_dependency(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    def _respond(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(503, json={"error": "detalle del vendor"})
+
+    provider = GuardedProvider(
+        GeminiProvider(
+            api_key=SecretStr(GEMINI_KEY),
+            model="gemini-3.8-flash",
+            timeout_seconds=1.0,
+            client=httpx.AsyncClient(transport=httpx.MockTransport(_respond)),
+        ),
+        timeout_seconds=1.0,
+        max_input_chars=4_000,
+    )
+    app = create_app(_settings())
+    app.state.provider = provider
+    _capture(caplog)
+
+    with TestClient(app) as client:
+        response = client.post(
+            URL,
+            json=_payload(),
+            headers={"X-Service-Key": SERVICE_KEY, "X-Request-ID": "req-failure-9"},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["generated"] is False
+    failed = [r for r in caplog.records if r.getMessage() == "provider.call.failed"]
+    assert len(failed) == 1
+    assert failed[0].request_id == "req-failure-9"
+    assert failed[0].http_status == 503
+    assert "detalle del vendor" not in " ".join(
+        str(value) for value in failed[0].__dict__.values()
+    )
+
+
 def test_request_id_is_correlated_without_reaching_gemini(
     caplog: pytest.LogCaptureFixture,
 ) -> None:

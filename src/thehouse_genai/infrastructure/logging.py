@@ -5,7 +5,9 @@ must never be passed as log fields.
 
 The provider block adds the call metadata of the LLM adapters: the provider, the
 internal model id, the error code, the duration and the lengths of the prompt and
-the completion. Lengths are metadata, never content. The moderation block adds only
+the completion. Failed calls may add the numeric HTTP status or the transport
+exception class name, never the vendor body. Lengths are metadata, never content.
+The moderation block adds only
 the decision, the category codes and the policy version; never the moderated text.
 """
 
@@ -28,6 +30,8 @@ _LOG_EXTRA_FIELDS = (
     "provider",
     "provider_model",
     "error_code",
+    "http_status",
+    "transport_error",
     "prompt_chars",
     "completion_chars",
     "generated",

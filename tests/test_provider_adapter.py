@@ -508,6 +508,8 @@ def test_success_log_records_metadata_without_content(
     assert record.prompt_chars == len("mi prompt secreto")
     assert record.completion_chars == len("respuesta completa")
     assert record.duration_ms >= 0
+    assert not hasattr(record, "http_status")
+    assert not hasattr(record, "transport_error")
 
     logged = _logged_text(caplog)
     assert "mi prompt secreto" not in logged
@@ -528,6 +530,8 @@ def test_failure_log_records_the_error_code_without_detail(
     assert record.getMessage() == "provider.call.failed"
     assert record.provider == "gemini"
     assert record.error_code == "PROVIDER_RATE_LIMIT"
+    assert record.http_status == 429
+    assert not hasattr(record, "transport_error")
 
     logged = _logged_text(caplog)
     assert "vendor-detail-secret" not in logged
@@ -550,6 +554,49 @@ def test_timeout_log_records_the_error_code(
 
     record = caplog.records[-1]
     assert record.error_code == "PROVIDER_TIMEOUT"
+    assert record.transport_error == "ReadTimeout"
+    assert not hasattr(record, "http_status")
+
+    logged = _logged_text(caplog)
+    assert "vendor timeout" not in logged
+
+
+def test_transport_failure_logs_only_the_exception_class(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.DEBUG)
+
+    def _respond(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("secret-host.invalid refused the connection")
+
+    provider = _provider(_respond)
+
+    with pytest.raises(ProviderUnavailableError):
+        _generate(provider, GenerativeAiRequest(prompt="hola"))
+
+    record = caplog.records[-1]
+    assert record.getMessage() == "provider.call.failed"
+    assert record.error_code == "PROVIDER_UNAVAILABLE"
+    assert record.transport_error == "ConnectError"
+    assert not hasattr(record, "http_status")
+
+    logged = _logged_text(caplog)
+    assert "secret-host.invalid" not in logged
+    assert "refused the connection" not in logged
+
+
+def test_invalid_payload_logs_the_received_status(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.DEBUG)
+    provider = _provider(_handler({"candidates": []}))
+
+    with pytest.raises(ProviderInvalidResponseError):
+        _generate(provider, GenerativeAiRequest(prompt="hola"))
+
+    record = caplog.records[-1]
+    assert record.error_code == "PROVIDER_INVALID_RESPONSE"
+    assert record.http_status == 200
 
 
 def test_deprecation_header_is_signalled_without_logging_the_header(
