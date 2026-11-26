@@ -31,9 +31,12 @@ from thehouse_genai.infrastructure.config import Settings
 from thehouse_genai.infrastructure.logging import RequestIdFilter
 from thehouse_genai.infrastructure.metrics import MetricsRegistry
 from thehouse_genai.providers.base import (
+    GenerativeAiRequest,
+    GenerativeAiResponse,
     GenerativeAiUsage,
     GuardedProvider,
     ProviderTimeoutError,
+    ProviderUnavailableError,
 )
 from thehouse_genai.providers.fake import FakeProvider
 from thehouse_genai.providers.gemini import GeminiProvider
@@ -42,6 +45,7 @@ from thehouse_genai.providers.moderation import (
     LocalRuleModerator,
     ModerationUnavailableError,
 )
+from thehouse_genai.providers.retrying import RetryingProvider
 
 SERVICE_KEY = "test-service-key"
 GEMINI_KEY = "test-key-not-a-real-credential"
@@ -331,6 +335,51 @@ def test_failure_log_keeps_request_id_without_a_provider_dependency(
     assert "detalle del vendor" not in " ".join(
         str(value) for value in failed[0].__dict__.values()
     )
+
+
+def test_retry_log_is_correlated_with_the_request(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    class _FlakyProvider:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def generate(self, request: GenerativeAiRequest) -> GenerativeAiResponse:
+            del request
+            self.calls += 1
+            if self.calls == 1:
+                raise ProviderUnavailableError()
+            return GenerativeAiResponse(
+                text=_completion(),
+                usage=GenerativeAiUsage(input_tokens=1, output_tokens=1),
+            )
+
+    async def _no_wait(delay: float) -> None:
+        return None
+
+    provider = GuardedProvider(
+        RetryingProvider(_FlakyProvider(), max_total_seconds=8.0, sleep=_no_wait),
+        timeout_seconds=1.0,
+        max_input_chars=4_000,
+    )
+    app = create_app(_settings())
+    app.state.provider = provider
+    _capture(caplog)
+
+    with TestClient(app) as client:
+        response = client.post(
+            URL,
+            json=_payload(),
+            headers={"X-Service-Key": SERVICE_KEY, "X-Request-ID": "req-retry-4"},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["generated"] is True
+    retries = [r for r in caplog.records if r.getMessage() == "provider.call.retry"]
+    assert len(retries) == 1
+    assert retries[0].request_id == "req-retry-4"
+    assert retries[0].attempt == 2
+    assert retries[0].error_code == "PROVIDER_UNAVAILABLE"
 
 
 def test_request_id_is_correlated_without_reaching_gemini(
