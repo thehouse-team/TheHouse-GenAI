@@ -28,7 +28,6 @@ from thehouse_genai.providers.base import (
     GenerativeAiUsage,
     GuardedProvider,
     ProviderError,
-    ProviderRateLimitError,
     ProviderUnavailableError,
 )
 from thehouse_genai.providers.gemini import GeminiProvider
@@ -185,19 +184,17 @@ def test_unavailable_then_success_generates_with_two_calls() -> None:
     assert sleep.delays == [0.3]
 
 
-def test_rate_limit_is_retried_once() -> None:
+def test_rate_limit_is_not_retried() -> None:
     seen: list[httpx.Request] = []
 
     def _respond(request: httpx.Request) -> httpx.Response:
         seen.append(request)
-        if len(seen) == 1:
-            return httpx.Response(429, json={"error": "slow down"})
-        return httpx.Response(200, json=_SUCCESS_PAYLOAD)
+        return httpx.Response(429, json={"error": "per-minute quota exhausted"})
 
     response = asyncio.run(ExplainMatch(_guarded(_gemini(_respond))).execute(_request()))
 
-    assert response.generated is True
-    assert len(seen) == 2
+    assert response.generated is False
+    assert len(seen) == 1
 
 
 def test_persistent_unavailable_degrades_after_two_calls(
@@ -290,6 +287,27 @@ def test_retry_must_fit_the_total_deadline() -> None:
     assert sleep.delays == [0.3]
 
 
+def test_expired_deadline_after_sleep_does_not_reserve_budget() -> None:
+    sleep = _SleepRecorder()
+    budget = _budget(call_limit=5)
+    delegate = _ScriptedProvider(ProviderUnavailableError(), _response())
+    provider = RetryingProvider(
+        delegate,
+        budget=budget,
+        max_total_seconds=1.0,
+        sleep=sleep,
+        clock=_Clock(0.0, 0.5, 1.1),
+    )
+    before = budget.snapshot().calls_used
+
+    with pytest.raises(ProviderUnavailableError):
+        asyncio.run(provider.generate(PORT_REQUEST))
+
+    assert budget.snapshot().calls_used == before
+    assert delegate.calls == 1
+    assert sleep.delays == [0.3]
+
+
 def test_each_attempt_reserves_the_daily_budget() -> None:
     seen: list[httpx.Request] = []
     budget = _budget(call_limit=3)
@@ -324,7 +342,7 @@ def test_no_budget_left_prevents_the_retry() -> None:
 
     assert response.generated is False
     assert len(seen) == 1
-    assert sleep.delays == []
+    assert sleep.delays == [0.3]  # the delay precedes the budget check
     assert budget.snapshot().calls_used == 1
 
 
@@ -333,7 +351,7 @@ def test_retry_log_records_attempt_and_error_code(
 ) -> None:
     caplog.set_level(logging.DEBUG)
     provider = RetryingProvider(
-        _ScriptedProvider(ProviderRateLimitError(), _response()),
+        _ScriptedProvider(ProviderUnavailableError(), _response()),
         max_total_seconds=8.0,
         sleep=_SleepRecorder(),
     )
@@ -343,7 +361,7 @@ def test_retry_log_records_attempt_and_error_code(
     retries = [r for r in caplog.records if r.getMessage() == "provider.call.retry"]
     assert len(retries) == 1
     assert retries[0].attempt == 2
-    assert retries[0].error_code == "PROVIDER_RATE_LIMIT"
+    assert retries[0].error_code == "PROVIDER_UNAVAILABLE"
 
 
 def test_negative_delay_is_rejected() -> None:

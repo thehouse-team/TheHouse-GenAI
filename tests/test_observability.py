@@ -138,6 +138,38 @@ def _gemini_app() -> tuple[FastAPI, list[httpx.Request]]:
     return app, seen
 
 
+def test_app_budget_stops_retry_after_one_vendor_call(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seen: list[httpx.Request] = []
+
+    def _respond(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(503, json={"error": "transient"})
+
+    class _MockedGemini(GeminiProvider):
+        def __init__(self, **kwargs: Any) -> None:
+            client = httpx.AsyncClient(transport=httpx.MockTransport(_respond))
+            super().__init__(client=client, **kwargs)
+
+    monkeypatch.setattr("thehouse_genai.providers.factory.GeminiProvider", _MockedGemini)
+    settings = _settings(
+        genai_provider="gemini",
+        genai_api_key=GEMINI_KEY,
+        genai_model="gemini-3.8-flash",
+        budget_enabled=True,
+        daily_call_limit=1,
+    )
+    app = create_app(settings)
+
+    with TestClient(app) as client:
+        response = client.post(URL, json=_payload(), headers={"X-Service-Key": SERVICE_KEY})
+
+    assert response.status_code == 200
+    assert response.json()["generated"] is False
+    assert len(seen) == 1
+
+
 def test_success_records_provider_tokens_and_outcome() -> None:
     registry = MetricsRegistry()
     provider = FakeProvider(

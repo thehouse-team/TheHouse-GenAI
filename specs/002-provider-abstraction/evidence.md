@@ -105,7 +105,20 @@ solo por esta corrección, documentada en `memoria.md`.
 | Bloque | Commit | Evidencia |
 | --- | --- | --- |
 | 1 | `fb67882` | `test_failure_log_records_the_error_code_without_detail` (http_status 429, sin cuerpo), `test_transport_failure_logs_only_the_exception_class` (solo `ConnectError`), `test_invalid_payload_logs_the_received_status`, `test_failure_log_keeps_request_id_without_a_provider_dependency` (request_id por `RequestIdFilter`, sin dependencia de `api`). |
-| 2 | `0f405a7` | `tests/test_retrying_provider.py` cubre 503→200 con 2 llamadas, 503→503 con fallback `PROVIDER_ERROR`, 401 y timeout con 1 llamada, primer intento lento sin reintento, deadline total y presupuesto agotado; `test_retry_log_records_attempt_and_error_code` y `test_retry_log_is_correlated_with_the_request` verifican el evento. La factory y la app quedan cubiertas en `test_provider_factory.py`. |
+| 2 | `0f405a7` | `tests/test_retrying_provider.py` cubre 503→200 con 2 llamadas, 503→503 con fallback `PROVIDER_ERROR`, 401, 429 y timeout con 1 llamada, primer intento lento sin reintento, deadline total y presupuesto agotado; `test_retry_log_records_attempt_and_error_code` y `test_retry_log_is_correlated_with_the_request` verifican el evento. La factory y la app quedan cubiertas en `test_provider_factory.py` y `test_observability.py`. |
+
+Revisión posterior de este bloque: el reintento quedó limitado a `ProviderUnavailableError`.
+Un `429` (`ProviderRateLimitError`) ya no se reintenta: en la capa gratuita indica que se
+agotó la cuota por minuto y esperar 300 ms solo consumiría más cupo diario
+(`test_rate_limit_is_not_retried`). La reserva de presupuesto del reintento se movió
+después de la comprobación del plazo posterior al sleep, justo antes de la segunda
+llamada (`test_expired_deadline_after_sleep_does_not_reserve_budget`). La prueba
+`test_app_budget_stops_retry_after_one_vendor_call` verifica en `create_app`, con
+`GENAI_DAILY_CALL_LIMIT=1` y un proveedor que siempre responde 503, que solo se hace
+una llamada al vendor y la respuesta es `generated=false`. Gates de la revisión:
+`ruff check .` y `mypy --strict .github/ci/revision_status.py` sin hallazgos,
+`mypy src` sin errores en 37 archivos y `pytest` 1156 tests, sin red y con el único
+warning heredado de `TestClient`.
 
 Gates por bloque: `ruff check .` y `mypy --strict .github/ci/revision_status.py` sin
 hallazgos; `mypy src` sin errores (36/37 archivos); `pytest` 1134/1149 tests, sin red

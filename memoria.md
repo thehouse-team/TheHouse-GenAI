@@ -101,14 +101,18 @@ sigue `PLANNED`. No se hizo push y no se abrieron llaves ni secretos.
   import de `api.request_context` y los `request_id` explícitos del adaptador: la
   correlación la sigue inyectando `RequestIdFilter` de `infrastructure/logging.py`.
   La allowlist del logging incorpora `http_status` y `transport_error`.
-- Bloque 2 (`0f405a7`): `RetryingProvider` en `providers/` aplica **un** reintento solo
-  ante `ProviderUnavailableError`/`ProviderRateLimitError`; espera fija de 300 ms
-  inyectable (`sleep`) y reloj inyectable. No reintenta ante Auth, InvalidResponse ni
-  Timeout. Solo reintenta si el primer intento duró <2.5 s y el total cabe en
-  `GENAI_TIMEOUT_SECONDS + 1 s`; la factory lo envuelve con `GuardedProvider`, cuyo
-  timeout (7 s) es el límite real de la secuencia. Cada intento consume el presupuesto
-  diario: el caso de uso reserva el primero y el decorador reserva el reintento; sin
-  presupuesto no hay reintento. Evento `provider.call.retry` con `attempt`,
+- Bloque 2 (`0f405a7`, ajustado por revisión en `fix: drop 429 retry and reserve budget
+  after deadline check`): `RetryingProvider` en `providers/` aplica **un** reintento
+  solo ante `ProviderUnavailableError`; espera fija de 300 ms inyectable (`sleep`) y
+  reloj inyectable. No reintenta ante Auth, InvalidResponse, `ProviderRateLimitError`
+  ni Timeout: en la capa gratuita un 429 significa que se agotó la cuota por minuto, así
+  que reintentar a los 300 ms solo consumiría más presupuesto. Solo reintenta si el
+  primer intento duró <2.5 s y el total cabe en `GENAI_TIMEOUT_SECONDS + 1 s`; la
+  factory lo envuelve con `GuardedProvider`, cuyo timeout (7 s) es el límite real de la
+  secuencia. Cada intento consume el presupuesto diario: el caso de uso reserva el
+  primero y el decorador reserva el reintento, pero solo después de verificar el plazo
+  tras el sleep; un plazo vencido o un cupo agotado no consumen slot ni reintentan.
+  Evento `provider.call.retry` con `attempt`,
   `error_code` y `request_id` (inyectado por el filtro del logger del decorador). No
   se añadió ninguna etiqueta de métrica: los contadores existentes registran el
   desenlace final de cada caso de uso y contar también cada intento duplicaría
@@ -133,6 +137,7 @@ sigue `PLANNED`. No se hizo push y no se abrieron llaves ni secretos.
 | 2 | `All checks passed!` | 37 archivos, sin errores | 1 archivo, sin errores | 1149 passed, 1 warning |
 | 3 | `All checks passed!` | 37 archivos, sin errores | 1 archivo, sin errores | 1154 passed, 1 warning |
 | 4 | `All checks passed!` | 37 archivos, sin errores | 1 archivo, sin errores | 1154 passed, 1 warning |
+| Revisión (`drop 429 retry`) | `All checks passed!` | 37 archivos, sin errores | 1 archivo, sin errores | 1156 passed, 1 warning |
 
 El único warning es el `StarletteDeprecationWarning` heredado de `TestClient` (deuda
 `008-testing`). `git diff --check` queda limpio.

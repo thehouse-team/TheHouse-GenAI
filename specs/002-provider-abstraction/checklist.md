@@ -43,9 +43,12 @@
 - [x] El adaptador de Gemini no importa `api.request_context`; el `request_id` sigue
       presente por el filtro de `infrastructure/logging.py`.
 - [x] Un reintento acotado aplicado por la factory a explain-match y parse-search, solo
-      ante `PROVIDER_UNAVAILABLE` y `PROVIDER_RATE_LIMIT`, con sleep inyectado.
-- [x] Sin reintento ante Auth, InvalidResponse, Timeout, primer intento lento, plazo
-      excedido o presupuesto agotado; cada intento consume el cupo diario.
+      ante `PROVIDER_UNAVAILABLE`, con sleep inyectado.
+- [x] Sin reintento ante Auth, `PROVIDER_RATE_LIMIT` (429 de cuota por minuto),
+      InvalidResponse, Timeout, primer intento lento, plazo excedido o presupuesto
+      agotado; cada intento consumido reserva su cupo diario.
+- [x] La reserva del reintento ocurre tras la comprobación del plazo posterior al sleep;
+      un plazo vencido no consume cupo.
 - [x] `provider.call.retry` con `attempt`, `error_code` y `request_id`; sin etiquetas
       nuevas de métrica.
 - [x] Gates en verde y evidencia registrada; spec sigue `IMPLEMENTED`.
