@@ -73,6 +73,14 @@ def _completion(explanation: str) -> str:
     return json.dumps({"explanation": explanation}, ensure_ascii=False)
 
 
+def _services_request(services: list[str]) -> ExplainMatchRequest:
+    """Build a request whose property carries the given received services."""
+
+    payload = _payload()
+    payload["property"]["services"] = services
+    return ExplainMatchRequest.model_validate(payload)
+
+
 def _run(provider: GenerativeAiProvider | None, request: ExplainMatchRequest | None = None) -> Any:
     """Execute the use case in a fresh event loop."""
 
@@ -168,6 +176,61 @@ def test_each_rejection_degrades_with_its_reason(
     assert response.prompt_version == EXPLAIN_MATCH_PROMPT_VERSION
     assert caplog.records[-1].fallback_reason == reason
     assert caplog.records[-1].generated is False
+
+
+def test_received_multiword_services_are_not_rejected() -> None:
+    services = ["agua caliente", "cocina", "seguridad", "limpieza"]
+    provider = FakeProvider(
+        text=_completion("Cuenta con agua caliente, cocina, seguridad y limpieza.")
+    )
+
+    response = asyncio.run(ExplainMatch(provider).execute(_services_request(services)))
+
+    assert response.generated is True
+
+
+def test_gastos_does_not_trigger_the_gas_service() -> None:
+    provider = FakeProvider(text=_completion("Los gastos de la propiedad son claros."))
+
+    response = asyncio.run(ExplainMatch(provider).execute(_request()))
+
+    assert response.generated is True
+
+
+def test_received_bano_privado_is_accepted() -> None:
+    provider = FakeProvider(text=_completion("Cuenta con baño privado."))
+
+    response = asyncio.run(
+        ExplainMatch(provider).execute(_services_request(["baño privado"]))
+    )
+
+    assert response.generated is True
+
+
+def test_unreceived_estacionamiento_is_rejected(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.DEBUG)
+    provider = FakeProvider(text=_completion("Cuenta con estacionamiento."))
+
+    response = asyncio.run(ExplainMatch(provider).execute(_services_request(["cocina"])))
+
+    assert response.generated is False
+    assert caplog.records[-1].fallback_reason == "UNKNOWN_SERVICE"
+
+
+def test_agua_alone_is_rejected_when_only_agua_caliente_was_received(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.DEBUG)
+    provider = FakeProvider(text=_completion("Cuenta con agua."))
+
+    response = asyncio.run(
+        ExplainMatch(provider).execute(_services_request(["agua caliente"]))
+    )
+
+    assert response.generated is False
+    assert caplog.records[-1].fallback_reason == "UNKNOWN_SERVICE"
 
 
 @pytest.mark.parametrize(

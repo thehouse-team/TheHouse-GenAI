@@ -5,7 +5,10 @@ must never be passed as log fields.
 
 The provider block adds the call metadata of the LLM adapters: the provider, the
 internal model id, the error code, the duration and the lengths of the prompt and
-the completion. Lengths are metadata, never content. The moderation block adds only
+the completion. Failed calls may add the numeric HTTP status or the transport
+exception class name, never the vendor body; a retry adds its attempt number.
+Lengths are metadata, never content.
+The moderation block adds only
 the decision, the category codes and the policy version; never the moderated text.
 """
 
@@ -28,6 +31,9 @@ _LOG_EXTRA_FIELDS = (
     "provider",
     "provider_model",
     "error_code",
+    "attempt",
+    "http_status",
+    "transport_error",
     "prompt_chars",
     "completion_chars",
     "generated",
@@ -100,6 +106,7 @@ def configure_logging(level: str = "INFO") -> None:
     # installed once per logger so repeated create_app calls do not stack them.
     for name in (
         "thehouse_genai.providers.gemini",
+        "thehouse_genai.providers.retrying",
         "thehouse_genai.application.explain_match",
         "thehouse_genai.application.parse_search",
     ):

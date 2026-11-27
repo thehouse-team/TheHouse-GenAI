@@ -3,19 +3,23 @@
 from __future__ import annotations
 
 import asyncio
+from decimal import Decimal
 from typing import Any
 
 import httpx
 import pytest
 from pydantic import SecretStr
 
+from thehouse_genai.infrastructure.budget import DailyBudget
 from thehouse_genai.infrastructure.config import Settings
 from thehouse_genai.providers.base import (
     GenerativeAiProvider,
     GenerativeAiRequest,
+    GenerativeAiResponse,
     GuardedProvider,
     ProviderInputTooLargeError,
     ProviderTimeoutError,
+    ProviderUnavailableError,
 )
 from thehouse_genai.providers.factory import (
     SUPPORTED_PROVIDERS,
@@ -25,6 +29,7 @@ from thehouse_genai.providers.factory import (
 )
 from thehouse_genai.providers.fake import FakeProvider
 from thehouse_genai.providers.gemini import GeminiProvider
+from thehouse_genai.providers.retrying import DEADLINE_MARGIN_SECONDS, RetryingProvider
 
 GEMINI_MODEL = "gemini-3.8-flash"
 GEMINI_PAYLOAD = {
@@ -77,6 +82,46 @@ def test_factory_builds_a_guarded_gemini_provider() -> None:
 
     assert isinstance(provider, GuardedProvider)
     assert isinstance(provider, GenerativeAiProvider)
+
+
+def test_factory_wraps_the_provider_in_one_bounded_retry() -> None:
+    settings = Settings(_env_file=None, genai_provider="fake")
+
+    provider = build_provider(settings)
+
+    assert isinstance(provider, GuardedProvider)
+    inner = provider._provider
+    assert isinstance(inner, RetryingProvider)
+    assert inner.max_total_seconds == settings.genai_timeout_seconds + DEADLINE_MARGIN_SECONDS
+
+
+def test_factory_passes_the_daily_budget_to_the_retry(monkeypatch: pytest.MonkeyPatch) -> None:
+    class _FlakyProvider:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def generate(self, request: GenerativeAiRequest) -> GenerativeAiResponse:
+            del request
+            self.calls += 1
+            raise ProviderUnavailableError()
+
+    flaky = _FlakyProvider()
+    monkeypatch.setattr("thehouse_genai.providers.factory.FakeProvider", lambda: flaky)
+    budget = DailyBudget(
+        enabled=True,
+        call_limit=1,
+        input_token_limit=None,
+        output_token_limit=None,
+        cost_input_per_million=Decimal(0),
+        cost_output_per_million=Decimal(0),
+    )
+    assert budget.reserve_call()  # no slot is left for the retry
+    provider = build_provider(Settings(_env_file=None, genai_provider="fake"), budget=budget)
+
+    with pytest.raises(ProviderUnavailableError):
+        asyncio.run(provider.generate(GenerativeAiRequest(prompt="hello")))
+
+    assert flaky.calls == 1
 
 
 def test_factory_rejects_missing_provider() -> None:

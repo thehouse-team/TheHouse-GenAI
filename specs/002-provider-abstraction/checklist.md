@@ -35,3 +35,20 @@
 - [x] Sin secretos, PII ni tokens en código, logs o fixtures.
 - [x] Sin adaptadores ni proveedores reales fuera de alcance.
 - [x] Evidencia registrada antes de marcar IMPLEMENTED.
+
+## Corrección G10 (2026-11-26)
+
+- [x] `provider.call.failed` registra `http_status` o `transport_error`, sin cuerpo ni
+      mensaje del vendor.
+- [x] El adaptador de Gemini no importa `api.request_context`; el `request_id` sigue
+      presente por el filtro de `infrastructure/logging.py`.
+- [x] Un reintento acotado aplicado por la factory a explain-match y parse-search, solo
+      ante `PROVIDER_UNAVAILABLE`, con sleep inyectado.
+- [x] Sin reintento ante Auth, `PROVIDER_RATE_LIMIT` (429 de cuota por minuto),
+      InvalidResponse, Timeout, primer intento lento, plazo excedido o presupuesto
+      agotado; cada intento consumido reserva su cupo diario.
+- [x] La reserva del reintento ocurre tras la comprobación del plazo posterior al sleep;
+      un plazo vencido no consume cupo.
+- [x] `provider.call.retry` con `attempt`, `error_code` y `request_id`; sin etiquetas
+      nuevas de métrica.
+- [x] Gates en verde y evidencia registrada; spec sigue `IMPLEMENTED`.

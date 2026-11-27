@@ -139,3 +139,21 @@ y `memoria.md` (deuda).
   logs, prompts ni respuestas.
 - `.env` no está versionado; `.env.example` solo contiene variables vacías y comentarios.
 - El contrato no incluye nombre del propietario, dirección exacta ni tokens.
+
+## Corrección G10 (2026-11-26, rama `fix/genai-resilience`)
+
+Corrección autorizada sobre esta spec ya `IMPLEMENTED`; no cambia su estado. El commit
+`c7bc809` corrige el falso `UNKNOWN_SERVICE` introducido por #21: antes de buscar los
+`KNOWN_SERVICES` con `\b`, `_validate_explanation` enmascara con espacios, de más largo
+a más corto y con `re.escape`, cada servicio recibido en `property.services` y
+`preferences.essential_services`.
+
+Pruebas añadidas en `tests/test_explain_match.py`: servicios compuestos recibidos
+(«agua caliente», «cocina», «seguridad», «limpieza») → `generated=true`; «gastos» sin
+`gas` → no rechazado; «baño privado» recibido → aceptado; «estacionamiento» no recibido
+→ `UNKNOWN_SERVICE`; «agua» suelto cuando solo llegó «agua caliente» →
+`UNKNOWN_SERVICE`.
+
+Gates de este bloque: `ruff check .` y `mypy --strict .github/ci/revision_status.py`
+sin hallazgos; `mypy src` sin errores en 37 archivos; `pytest` 1154 tests, sin red y con
+el único warning heredado de `TestClient`. `git diff --check` limpio.

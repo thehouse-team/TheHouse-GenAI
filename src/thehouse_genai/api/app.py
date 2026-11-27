@@ -90,7 +90,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
 
     try:
-        provider: GenerativeAiProvider | None = build_provider(resolved)
+        provider: GenerativeAiProvider | None = build_provider(resolved, budget=budget)
     except (UnsupportedProviderError, ProviderConfigurationError):
         logger.error("provider.not_configured")
         provider = None

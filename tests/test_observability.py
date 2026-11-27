@@ -31,9 +31,12 @@ from thehouse_genai.infrastructure.config import Settings
 from thehouse_genai.infrastructure.logging import RequestIdFilter
 from thehouse_genai.infrastructure.metrics import MetricsRegistry
 from thehouse_genai.providers.base import (
+    GenerativeAiRequest,
+    GenerativeAiResponse,
     GenerativeAiUsage,
     GuardedProvider,
     ProviderTimeoutError,
+    ProviderUnavailableError,
 )
 from thehouse_genai.providers.fake import FakeProvider
 from thehouse_genai.providers.gemini import GeminiProvider
@@ -42,6 +45,7 @@ from thehouse_genai.providers.moderation import (
     LocalRuleModerator,
     ModerationUnavailableError,
 )
+from thehouse_genai.providers.retrying import RetryingProvider
 
 SERVICE_KEY = "test-service-key"
 GEMINI_KEY = "test-key-not-a-real-credential"
@@ -132,6 +136,38 @@ def _gemini_app() -> tuple[FastAPI, list[httpx.Request]]:
     app = create_app(_settings())
     app.state.provider = provider
     return app, seen
+
+
+def test_app_budget_stops_retry_after_one_vendor_call(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seen: list[httpx.Request] = []
+
+    def _respond(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(503, json={"error": "transient"})
+
+    class _MockedGemini(GeminiProvider):
+        def __init__(self, **kwargs: Any) -> None:
+            client = httpx.AsyncClient(transport=httpx.MockTransport(_respond))
+            super().__init__(client=client, **kwargs)
+
+    monkeypatch.setattr("thehouse_genai.providers.factory.GeminiProvider", _MockedGemini)
+    settings = _settings(
+        genai_provider="gemini",
+        genai_api_key=GEMINI_KEY,
+        genai_model="gemini-3.8-flash",
+        budget_enabled=True,
+        daily_call_limit=1,
+    )
+    app = create_app(settings)
+
+    with TestClient(app) as client:
+        response = client.post(URL, json=_payload(), headers={"X-Service-Key": SERVICE_KEY})
+
+    assert response.status_code == 200
+    assert response.json()["generated"] is False
+    assert len(seen) == 1
 
 
 def test_success_records_provider_tokens_and_outcome() -> None:
@@ -293,6 +329,89 @@ def test_rate_limit_rejection_is_counted() -> None:
     assert first.status_code == 200
     assert response.status_code == 429
     assert _count(app.state.metrics, MetricName.RATE_LIMIT_REJECTIONS_TOTAL) == 1
+
+
+def test_failure_log_keeps_request_id_without_a_provider_dependency(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    def _respond(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(503, json={"error": "detalle del vendor"})
+
+    provider = GuardedProvider(
+        GeminiProvider(
+            api_key=SecretStr(GEMINI_KEY),
+            model="gemini-3.8-flash",
+            timeout_seconds=1.0,
+            client=httpx.AsyncClient(transport=httpx.MockTransport(_respond)),
+        ),
+        timeout_seconds=1.0,
+        max_input_chars=4_000,
+    )
+    app = create_app(_settings())
+    app.state.provider = provider
+    _capture(caplog)
+
+    with TestClient(app) as client:
+        response = client.post(
+            URL,
+            json=_payload(),
+            headers={"X-Service-Key": SERVICE_KEY, "X-Request-ID": "req-failure-9"},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["generated"] is False
+    failed = [r for r in caplog.records if r.getMessage() == "provider.call.failed"]
+    assert len(failed) == 1
+    assert failed[0].request_id == "req-failure-9"
+    assert failed[0].http_status == 503
+    assert "detalle del vendor" not in " ".join(
+        str(value) for value in failed[0].__dict__.values()
+    )
+
+
+def test_retry_log_is_correlated_with_the_request(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    class _FlakyProvider:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def generate(self, request: GenerativeAiRequest) -> GenerativeAiResponse:
+            del request
+            self.calls += 1
+            if self.calls == 1:
+                raise ProviderUnavailableError()
+            return GenerativeAiResponse(
+                text=_completion(),
+                usage=GenerativeAiUsage(input_tokens=1, output_tokens=1),
+            )
+
+    async def _no_wait(delay: float) -> None:
+        return None
+
+    provider = GuardedProvider(
+        RetryingProvider(_FlakyProvider(), max_total_seconds=8.0, sleep=_no_wait),
+        timeout_seconds=1.0,
+        max_input_chars=4_000,
+    )
+    app = create_app(_settings())
+    app.state.provider = provider
+    _capture(caplog)
+
+    with TestClient(app) as client:
+        response = client.post(
+            URL,
+            json=_payload(),
+            headers={"X-Service-Key": SERVICE_KEY, "X-Request-ID": "req-retry-4"},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["generated"] is True
+    retries = [r for r in caplog.records if r.getMessage() == "provider.call.retry"]
+    assert len(retries) == 1
+    assert retries[0].request_id == "req-retry-4"
+    assert retries[0].attempt == 2
+    assert retries[0].error_code == "PROVIDER_UNAVAILABLE"
 
 
 def test_request_id_is_correlated_without_reaching_gemini(
