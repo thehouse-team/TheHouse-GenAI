@@ -116,7 +116,7 @@ def test_valid_completion_returns_generated_explanation() -> None:
     assert response.generated is True
     assert response.explanation == explanation
     assert response.prompt_version == EXPLAIN_MATCH_PROMPT_VERSION
-    assert EXPLAIN_MATCH_PROMPT_VERSION == "explain_match_v3"
+    assert EXPLAIN_MATCH_PROMPT_VERSION == "explain_match_v4"
 
 
 def test_port_request_carries_the_generation_settings() -> None:
@@ -187,6 +187,52 @@ def test_received_multiword_services_are_not_rejected() -> None:
     response = asyncio.run(ExplainMatch(provider).execute(_services_request(services)))
 
     assert response.generated is True
+
+
+def test_service_named_in_the_title_is_treated_as_received() -> None:
+    payload = _payload()
+    payload["property"]["title"] = "Cuarto amueblado"
+    provider = FakeProvider(
+        text=_completion("Este cuarto amueblado coincide con tus preferencias.")
+    )
+
+    response = asyncio.run(
+        ExplainMatch(provider).execute(ExplainMatchRequest.model_validate(payload))
+    )
+
+    assert response.generated is True
+
+
+def test_unreceived_service_is_rejected_even_with_an_unrelated_title(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.DEBUG)
+    payload = _payload()
+    payload["property"]["title"] = "Cuarto individual"
+    provider = FakeProvider(text=_completion("Cuenta con estacionamiento."))
+
+    response = asyncio.run(
+        ExplainMatch(provider).execute(ExplainMatchRequest.model_validate(payload))
+    )
+
+    assert response.generated is False
+    assert caplog.records[-1].fallback_reason == "UNKNOWN_SERVICE"
+
+
+def test_service_in_the_title_does_not_whitelist_another_service(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.DEBUG)
+    payload = _payload()
+    payload["property"]["title"] = "Departamento con estacionamiento"
+    provider = FakeProvider(text=_completion("Cuenta con lavadora."))
+
+    response = asyncio.run(
+        ExplainMatch(provider).execute(ExplainMatchRequest.model_validate(payload))
+    )
+
+    assert response.generated is False
+    assert caplog.records[-1].fallback_reason == "UNKNOWN_SERVICE"
 
 
 def test_gastos_does_not_trigger_the_gas_service() -> None:
@@ -451,7 +497,7 @@ def _real_payload() -> ExplainMatchRequest:
 
 
 def test_prompt_v3_rules_are_present() -> None:
-    assert EXPLAIN_MATCH_PROMPT_VERSION == "explain_match_v3"
+    assert EXPLAIN_MATCH_PROMPT_VERSION == "explain_match_v4"
     assert "No saludes ni uses exclamaciones" in SYSTEM_PROMPT
     assert "empieza directo con la propiedad" in SYSTEM_PROMPT
     assert "no 'por ciento'" in SYSTEM_PROMPT
@@ -466,6 +512,113 @@ def test_prompt_v3_rules_are_present() -> None:
     assert "espacio entre cada palabra" in SYSTEM_PROMPT
     assert "NO CONFIABLES" in SYSTEM_PROMPT
     assert "no lo completes ni lo deduzcas" in SYSTEM_PROMPT
+
+
+def test_prompt_v4_compliance_rule_is_present() -> None:
+    assert EXPLAIN_MATCH_PROMPT_VERSION == "explain_match_v4"
+    assert "TODOS" in SYSTEM_PROMPT
+    assert "[PRESENTE]" in SYSTEM_PROMPT
+    assert "[FALTA]" in SYSTEM_PROMPT
+    assert "nombra ese servicio" in SYSTEM_PROMPT
+
+
+def test_all_essentials_present_are_marked_and_naming_them_passes() -> None:
+    payload = _payload()
+    payload["property"]["services"] = ["internet", "lavadora"]
+    payload["preferences"]["essentialServices"] = ["internet", "lavadora"]
+    provider = FakeProvider(
+        text=_completion("Cuenta con internet y lavadora, que son tus esenciales.")
+    )
+
+    response = asyncio.run(
+        ExplainMatch(provider).execute(ExplainMatchRequest.model_validate(payload))
+    )
+
+    prompt = provider.calls[0].prompt
+    assert "preferences.essentialServices: internet [PRESENTE], lavadora [PRESENTE]" in prompt
+    assert "[FALTA]" not in prompt
+    assert response.generated is True
+
+
+def test_missing_essential_is_named_in_the_prompt() -> None:
+    payload = _payload()
+    payload["property"]["services"] = ["internet"]
+    payload["preferences"]["essentialServices"] = ["internet", "lavadora"]
+    provider = FakeProvider(text=_completion("Coincidencia con tus preferencias."))
+
+    asyncio.run(
+        ExplainMatch(provider).execute(ExplainMatchRequest.model_validate(payload))
+    )
+
+    prompt = provider.calls[0].prompt
+    assert "preferences.essentialServices: internet [PRESENTE], lavadora [FALTA]" in prompt
+
+
+# Closed list of total-compliance phrases rejected by the validator.
+UNMET_CLAIM_PHRASES = (
+    "cumple con lo que pediste",
+    "cumpliendo con lo que pediste",
+    "cumple con todo lo que pediste",
+    "cumple con todo",
+    "tiene todo lo que buscas",
+    "tiene todo lo que necesitas",
+    "tiene todo lo que pediste",
+    "satisface todas tus necesidades",
+)
+
+
+@pytest.mark.parametrize("phrase", UNMET_CLAIM_PHRASES)
+def test_total_claim_with_a_missing_essential_degrades(
+    phrase: str, caplog: pytest.LogCaptureFixture
+) -> None:
+    caplog.set_level(logging.DEBUG)
+    payload = _payload()
+    payload["preferences"]["essentialServices"] = ["internet", "lavadora"]
+    provider = FakeProvider(text=_completion(f"Este cuarto {phrase}."))
+
+    response = asyncio.run(
+        ExplainMatch(provider).execute(ExplainMatchRequest.model_validate(payload))
+    )
+
+    assert response.generated is False
+    assert caplog.records[-1].fallback_reason == "UNMET_CLAIM"
+
+
+def test_total_claim_with_all_essentials_present_is_allowed() -> None:
+    payload = _payload()
+    payload["property"]["services"] = ["internet", "lavadora"]
+    payload["preferences"]["essentialServices"] = ["internet", "lavadora"]
+    provider = FakeProvider(text=_completion("Este cuarto cumple con todo lo que pediste."))
+
+    response = asyncio.run(
+        ExplainMatch(provider).execute(ExplainMatchRequest.model_validate(payload))
+    )
+
+    assert response.generated is True
+
+
+@pytest.mark.parametrize(
+    "guarded",
+    [
+        "Este cuarto no cumple con todo lo que pediste.",
+        "Este cuarto cumple con todo sin la limpieza incluida.",
+        "Este cuarto cumple con todo, excepto la limpieza.",
+        "Este cuarto cumple con todo, menos la limpieza.",
+        "Este cuarto cumple con todo, pero falta la limpieza.",
+        "Este cuarto cumple con todo, aunque sin la limpieza.",
+        "Este cuarto cumple con todo, falta la limpieza.",
+    ],
+)
+def test_negated_or_qualified_claim_is_not_unmet_claim(guarded: str) -> None:
+    payload = _payload()
+    payload["preferences"]["essentialServices"] = ["internet", "lavadora"]
+    provider = FakeProvider(text=_completion(guarded))
+
+    response = asyncio.run(
+        ExplainMatch(provider).execute(ExplainMatchRequest.model_validate(payload))
+    )
+
+    assert response.generated is True
 
 
 def test_real_gemini_normal_response_is_accepted() -> None:

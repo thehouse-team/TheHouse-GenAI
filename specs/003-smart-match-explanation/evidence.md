@@ -222,3 +222,86 @@ En `tests/test_explain_match.py`: parametrizada con los 10 códigos del catálog
 
 El único warning sigue siendo el `StarletteDeprecationWarning` heredado de `TestClient`
 (deuda 008).
+
+## Corrección G10 — calidad de la explicación (2026-11-28, rama `fix/explanation-quality`)
+
+Corrección autorizada sobre esta spec ya `IMPLEMENTED`; su estado no cambia y ninguna
+spec pasa a `ACTIVE`. Rama creada desde `origin/main` en `dc56827` (PR #24), confirmado
+con `git fetch` y `git rev-parse origin/main`. Sin push, sin secretos y sin abrir
+`moderation_lexicon.json`.
+
+### Bloque 1 — servicios nombrados en el título (`71f1620`)
+
+- **Reporte (origen corregido)**: el incidente **no fue reportado por Backend**. Lo
+  detectó el operador en la prueba manual desde el contenedor (`az containerapp exec`),
+  revisión `ca-thehouse-genai-u2--0000013`, 2026-11-28 06:12 UTC. Los seis request_id
+  `uni-UTTT`, `uni-UAEH-ESTE`, `uni-UMB-VDC`, `uni-UNE-TULA`, `uni-UMB-JILO` y
+  `uni-UAEH-ESAT` degradaron con `UNKNOWN_SERVICE`: con `property.title:
+  "Cuarto amueblado"` y sin `amueblado` en `services`, el modelo repetía el título.
+  La palabra venía del input, así que no era una alucinación.
+- **Verificación**: la repetición con título neutro (request_id `uni2-*`, revisión
+  `0000015`) dio **6/6 `generated=true`** y confirmó la corrección de universidades con
+  guion del PR #24 (`dc56827`).
+- **Corrección**: `_validate_explanation` añade a `mentioned` los servicios de
+  `KNOWN_SERVICES` que aparecen como palabra completa (`\b`, en minúsculas) en
+  `request.property.title`. No cambia el orden ni las demás validaciones. La plantilla
+  de fallback sigue sin usar el título (decisión A6) y su prueba existente sigue verde.
+- **Pruebas** en `tests/test_explain_match.py`: (a) título «Cuarto amueblado» con
+  «Este cuarto amueblado…» → `generated=true`; (b) título «Cuarto individual» con
+  «estacionamiento» no recibido → `UNKNOWN_SERVICE`; (c) título «Departamento con
+  estacionamiento» con «lavadora» → `UNKNOWN_SERVICE`.
+
+### Bloque 2 — regla de cumplimiento (`aae814d`)
+
+- **Reporte**: petición de Backend; con `matchScore` 70 el texto decía «cumpliendo con lo
+  que pediste» sin nombrar servicios. El reporte no incluyó request_id individual y no
+  se inventa ninguno.
+- **Prompt**: `explain_match_v4` = `explain_match_v3` + una sola regla (la 10): solo se
+  puede afirmar que el cuarto cumple lo que pidió el estudiante si TODOS los
+  `preferences.essentialServices` están en `property.services`, y en ese caso hay que
+  nombrarlos; si falta alguno, la explicación debe nombrar el que falta. El contexto
+  anota cada esencial con `[PRESENTE]` o `[FALTA]`, calculado en código y escapado con
+  `escape_untrusted`; el modelo no calcula la pertenencia.
+- **Validador**: nuevo `UNMET_CLAIM` si aparece una frase de cumplimiento total y falta
+  algún esencial. Lista cerrada de ocho frases: «cumple con lo que pediste»,
+  «cumpliendo con lo que pediste», «cumple con todo lo que pediste», «cumple con todo»,
+  «tiene todo lo que buscas», «tiene todo lo que necesitas», «tiene todo lo que pediste»
+  y «satisface todas tus necesidades». Guard de negación/excepción en la misma oración:
+  `no`, `sin`, `excepto`, `menos`, `pero`, `aunque`, `falta`, como palabras completas
+  (así `no` no confunde con `conocido`). Se añade a `FallbackReason` y, por derivación
+  de la enum, a la etiqueta `reason` de `explain_match_fallbacks_total`.
+- **Pruebas**: (a) todos los esenciales presentes → el prompt los marca `[PRESENTE]` y
+  una explicación que los nombra pasa; (b) falta uno → el prompt marca `[FALTA]` y nombra
+  cuál falta; (c) las ocho frases con un esencial faltante → `UNMET_CLAIM`; (d) la misma
+  frase con todos presentes → pasa; (e) «no cumple con todo lo que pediste» y las siete
+  combinaciones de guard → no son `UNMET_CLAIM`. Además, una prueba de observabilidad
+  verifica el contador `explain_match_fallbacks_total{reason="UNMET_CLAIM"}` y el valor
+  de la enum. Retrocompatibilidad: en las pruebas existentes solo cambiaron tres
+  literales de `promptVersion` (`explain_match_v3` → `explain_match_v4`); ninguna otra
+  aserción cambia.
+
+### Límites conocidos
+
+Estos límites quedan documentados como deuda de precisión; no implican cambios de
+código en esta corrección:
+
+1. Un servicio nombrado en el título cuenta como recibido aunque esté negado (p. ej.
+   «sin estacionamiento»): el validador solo comprueba la aparición como palabra
+   completa, no el sentido de la frase.
+2. `UNMET_CLAIM` no detecta paráfrasis de cumplimiento total ni oraciones con negación
+   o excepción: esas oraciones se eximen deliberadamente del rechazo.
+3. El validador no detecta si el texto afirma que un esencial marcado `[FALTA]` sí está;
+   esa parte queda cubierta solo por la regla 10 del prompt.
+
+### Gates (salida real)
+
+| Gate | Bloque 1 | Bloques 2 y 3 |
+| --- | --- | --- |
+| `ruff check .` | `All checks passed!` | `All checks passed!` |
+| `mypy src` | sin errores en 37 archivos | sin errores en 37 archivos |
+| `mypy --strict .github/ci/revision_status.py` | sin errores en 1 archivo | sin errores en 1 archivo |
+| `pytest` | 1174 passed, 1 warning | 1194 passed, 1 warning |
+| `git diff --check` | limpio | limpio |
+
+El único warning sigue siendo el `StarletteDeprecationWarning` heredado de `TestClient`
+(deuda 008). El bloque 3 es solo documentación y no ejecuta gates adicionales.

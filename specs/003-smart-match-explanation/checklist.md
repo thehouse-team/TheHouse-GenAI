@@ -73,3 +73,34 @@
       `FOREIGN_CURRENCY` y `ESTE` solo → `FOREIGN_UNIVERSITY`.
 - [x] `USD` sigue siendo `FOREIGN_CURRENCY`; el orden de validaciones no cambia.
 - [x] Gates en verde y evidencia registrada; spec sigue `IMPLEMENTED`.
+
+## Corrección G10 — calidad de la explicación (2026-11-28)
+
+- [x] Rama `fix/explanation-quality` creada desde `origin/main` (`dc56827`, PR #24);
+      sin push, sin secretos y sin abrir `moderation_lexicon.json`; 003 sigue
+      `IMPLEMENTED` y ninguna spec pasa a `ACTIVE`.
+- [x] Bloque 1 (`71f1620`): el incidente lo detectó el operador en la prueba manual
+      desde el contenedor (`az containerapp exec`), no Backend: revisión
+      `ca-thehouse-genai-u2--0000013`, 2026-11-28 06:12 UTC, request_id `uni-UTTT`,
+      `uni-UAEH-ESTE`, `uni-UMB-VDC`, `uni-UNE-TULA`, `uni-UMB-JILO` y `uni-UAEH-ESAT`,
+      los seis con `UNKNOWN_SERVICE`. La repetición con título neutro (`uni2-*`, revisión
+      `0000015`) dio 6/6 `generated=true` y confirmó el PR #24. Los servicios conocidos
+      nombrados en el título se tratan como recibidos; ni el orden ni las demás
+      validaciones cambian y el fallback sigue sin incluir el título (A6).
+- [x] Pruebas del bloque 1: «Cuarto amueblado» → `generated=true`; «Cuarto individual»
+      con «estacionamiento» → `UNKNOWN_SERVICE`; «Departamento con estacionamiento» con
+      «lavadora» → `UNKNOWN_SERVICE`.
+- [x] Bloque 2 (`aae814d`, reporte de Backend sin request_id individual): prompt
+      `explain_match_v4` = v3 + una sola regla de cumplimiento; el contexto marca los
+      esenciales como `[PRESENTE]` o `[FALTA]`, calculado en código.
+- [x] `UNMET_CLAIM` con lista cerrada de ocho frases y guard de negación/excepción en la
+      misma oración; añadido a `FallbackReason` y a `explain_match_fallbacks_total`.
+- [x] Pruebas del bloque 2: casos (a)–(e), las ocho frases y los siete guards; el
+      contador de fallback registra `reason=UNMET_CLAIM`.
+- [x] Retrocompatibilidad: solo cambian tres literales de `promptVersion` en pruebas
+      existentes; ninguna otra aserción cambia.
+- [x] Límites conocidos documentados: un servicio negado en el título cuenta como
+      recibido; `UNMET_CLAIM` no cubre paráfrasis ni negación/excepción; el validador no
+      detecta la afirmación de que un esencial `[FALTA]` está presente (solo lo cubre
+      el prompt).
+- [x] Gates en verde y evidencia registrada; 003 sigue `IMPLEMENTED`.
