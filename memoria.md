@@ -1,6 +1,6 @@
 # Memoria del proyecto — TheHouse GenAI
 
-Última actualización: 2026-11-26
+Última actualización: 2026-11-27
 
 ## Identidad
 
@@ -141,6 +141,36 @@ sigue `PLANNED`. No se hizo push y no se abrieron llaves ni secretos.
 
 El único warning es el `StarletteDeprecationWarning` heredado de `TestClient` (deuda
 `008-testing`). `git diff --check` queda limpio.
+
+## Corrección G10 sobre 003 — códigos universitarios (2026-11-27)
+
+Autorización: corrección sobre la spec **003** ya `IMPLEMENTED`, en la rama
+`fix/university-codes` creada desde `origin/main` (`da1f753`, confirmado con `git fetch`
+y `git rev-parse origin/main`). No hay ninguna spec `ACTIVE`; 003 sigue `IMPLEMENTED` y
+`010-integration-thehouse` sigue `PLANNED`. Sin push, sin secretos y sin abrir
+`moderation_lexicon.json`.
+
+- **Reporte**: Backend verificó en producción (2026-11-27 18:46 UTC) los request_id
+  `9a170e8db113424692b5b64342e4dcb4` y `c45db7b43beb401ab5ab707f95dacf93`: con
+  `university` con guion, explicaciones correctas se degradaban a `generated=false`.
+  Afecta a 6 de 10 códigos del catálogo: `UAEH-ESTE`, `UAEH-ESTL`, `UAEH-ESAT`,
+  `UMB-JILO`, `UMB-VDC` y `UNE-TULA`.
+- **Causa doble**: (1) `_ACRONYM_PATTERN` cortaba en el guion y convertía `UAEH-ESTE`
+  en `UAEH` + `ESTE` → `FOREIGN_UNIVERSITY`; (2) `_CURRENCY_PATTERN`
+  (`\b[A-Z]{3}\b`) leía `UMB`, `UNE` y `VDC` como monedas → `FOREIGN_CURRENCY`, antes
+  de la validación de siglas. Se detectó además que `tula` en `UNE-TULA` disparaba
+  `MALFORMED_TEXT` (`tu` + `la`) en el detector de palabras pegadas.
+- **Corrección**: máscara de las apariciones exactas de `request.university` en una
+  copia del texto con `(?<![\w-])` + `re.escape` + `(?![\w-])`, usada para
+  `MALFORMED_TEXT`, `FOREIGN_CURRENCY` y `FOREIGN_UNIVERSITY`; `_ACRONYM_PATTERN` pasa a
+  `r"\b[A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑ0-9]{2,}(?:-[A-ZÁÉÍÓÚÑ0-9]{2,})*\b"`. Sin añadir partes
+  del código a las siglas permitidas (`UMB`/`ESTE` solos siguen rechazados) y sin
+  cambiar el orden de validaciones.
+- **Gates**: ruff `All checks passed!`; mypy src sin errores en 37 archivos;
+  mypy --strict de `.github/ci/revision_status.py` sin errores en 1 archivo; pytest
+  1171 passed, 1 warning heredado de `TestClient`; `git diff --check` limpio. Un commit:
+  `fix: accept hyphenated university codes in explanation validator (spec 003)`.
+  Evidencia detallada en `specs/003-smart-match-explanation/evidence.md`.
 
 `004-natural-language-search` (G08) se cerró como **IMPLEMENTED** el 2026-11-18 sobre la
 rama `feature/natural-language-search`, con plan aprobado y las decisiones D1–D13 más los

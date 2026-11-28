@@ -157,3 +157,68 @@ Pruebas añadidas en `tests/test_explain_match.py`: servicios compuestos recibid
 Gates de este bloque: `ruff check .` y `mypy --strict .github/ci/revision_status.py`
 sin hallazgos; `mypy src` sin errores en 37 archivos; `pytest` 1154 tests, sin red y con
 el único warning heredado de `TestClient`. `git diff --check` limpio.
+
+## Corrección G10 sobre códigos universitarios (2026-11-27, rama `fix/university-codes`)
+
+Corrección autorizada sobre esta spec ya `IMPLEMENTED`; su estado no cambia y ninguna
+spec pasa a `ACTIVE`. Rama creada desde `origin/main` en `da1f753`, confirmado con
+`git fetch` y `git rev-parse origin/main`. Sin push, sin secretos y sin abrir
+`moderation_lexicon.json`.
+
+### Reporte de producción
+
+Backend reportó dos requests verificados en producción el 2026-11-27 a las 18:46 UTC:
+`9a170e8db113424692b5b64342e4dcb4` y `c45db7b43beb401ab5ab707f95dacf93`. Con
+`university` en código con guion, `_validate_explanation` rechazaba explicaciones
+correctas (`generated=false`). Afecta a 6 de los 10 códigos del catálogo de ML:
+`UAEH-ESTE`, `UAEH-ESTL`, `UAEH-ESAT`, `UMB-JILO`, `UMB-VDC` y `UNE-TULA`.
+
+### Causa doble
+
+1. `_ACRONYM_PATTERN` cortaba en el guion: `UAEH-ESTE` se leía como `UAEH` y `ESTE`,
+   ninguno de los cuales coincide con el código recibido → `FOREIGN_UNIVERSITY`.
+2. `_CURRENCY_PATTERN` (`\b[A-Z]{3}\b`) tomaba `UMB`, `UNE` y `VDC` como monedas →
+   `FOREIGN_CURRENCY`, que se evalúa antes que la validación de siglas.
+
+Al ejecutar la prueba de los 10 códigos apareció un tercer falso rechazo del mismo
+origen: el detector de palabras pegadas (`_has_joined_words`) interpretaba `tula` en
+`UNE-TULA` como `tu` + `la` → `MALFORMED_TEXT`. Se documenta aquí para que la causa no
+quede incompleta.
+
+### Corrección
+
+- Antes de las validaciones de moneda y siglas (y del detector de palabras pegadas,
+  con el mismo origen), `_validate_explanation` oculta en una copia del texto las
+  apariciones exactas de `request.university` con `(?<![\w-])` + `re.escape(...)` +
+  `(?![\w-])`, reemplazándolas por un espacio. Los lookarounds funcionan con guion:
+  `UAEH-ESTE` no enmascara `UAEH-ESTL`. Esa copia alimenta `MALFORMED_TEXT`,
+  `FOREIGN_CURRENCY` y `FOREIGN_UNIVERSITY`.
+- `_ACRONYM_PATTERN` pasa a
+  `r"\b[A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑ0-9]{2,}(?:-[A-ZÁÉÍÓÚÑ0-9]{2,})*\b"`, de modo que un código
+  distinto con guion se detecta como un solo token.
+- No se añaden las partes del código (`split("-")`) a las siglas permitidas: `UMB` solo
+  sigue rechazándose como `FOREIGN_CURRENCY` y `ESTE` solo como `FOREIGN_UNIVERSITY`.
+- El orden del resto de validaciones no cambia.
+
+### Pruebas añadidas
+
+En `tests/test_explain_match.py`: parametrizada con los 10 códigos del catálogo
+(`UTTT`, `UAEH-ESTE`, `UAEH-ESTL`, `UAEH-ESAT`, `ITSOEH`, `TESJI`, `UMB-JILO`,
+`UMB-VDC`, `UCAN`, `UNE-TULA`) → `generated=true` al mencionar el código recibido y
+`MXN`; `UAEH-ESTE` con `UAEH-ESTL` → `FOREIGN_UNIVERSITY`; `UMB-VDC` con solo `UMB` →
+`FOREIGN_CURRENCY` (la validación de moneda va antes que la de siglas); `UTTT` con
+`UAEH-ESTE` → `FOREIGN_UNIVERSITY`; `USD` sigue siendo `FOREIGN_CURRENCY`; `ESTE` solo →
+`FOREIGN_UNIVERSITY`. Las pruebas existentes pasan sin cambios.
+
+### Gates (salida real)
+
+| Gate | Comando | Salida |
+| --- | --- | --- |
+| Lint | `.venv\Scripts\python.exe -m ruff check .` | `All checks passed!` |
+| Tipado | `.venv\Scripts\python.exe -m mypy src` | `Success: no issues found in 37 source files` |
+| Tipado CI | `.venv\Scripts\python.exe -m mypy --strict .github/ci/revision_status.py` | `Success: no issues found in 1 source file` |
+| Tests | `.venv\Scripts\python.exe -m pytest` | `1171 passed, 1 warning in 14.29s` |
+| Whitespace | `git diff --check` | sin salida, exit 0 |
+
+El único warning sigue siendo el `StarletteDeprecationWarning` heredado de `TestClient`
+(deuda 008).

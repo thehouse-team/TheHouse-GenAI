@@ -91,7 +91,9 @@ _LETTER_CURRENCY_PATTERN: Final[re.Pattern[str]] = re.compile(r"(?<=[^\W\d_])\$"
 _WHITESPACE_PATTERN: Final[re.Pattern[str]] = re.compile(r"\s+")
 _PERCENT_PATTERN: Final[re.Pattern[str]] = re.compile(r"\d[\d,]*(?:\.\d+)?%")
 _CURRENCY_PATTERN: Final[re.Pattern[str]] = re.compile(r"\b[A-Z]{3}\b")
-_ACRONYM_PATTERN: Final[re.Pattern[str]] = re.compile(r"\b[A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑ0-9]{2,}\b")
+_ACRONYM_PATTERN: Final[re.Pattern[str]] = re.compile(
+    r"\b[A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑ0-9]{2,}(?:-[A-ZÁÉÍÓÚÑ0-9]{2,})*\b"
+)
 # Concatenation detector (decision D14). A broad regex would flag valid words such as
 # "conde", "conforme", "delante" or "porque". A token is only suspicious when it is
 # exactly a common function-word prefix plus a domain-term suffix.
@@ -189,7 +191,14 @@ def _validate_explanation(
     if len(text.split()) > max_words or len(text) > MAX_EXPLANATION_CHARS:
         return "TOO_LONG"
 
-    if _has_joined_words(text):
+    # The received university code may be hyphenated ("UAEH-ESTE"). Mask its exact
+    # occurrences before the token-based checks so its parts are not read as joined
+    # words (e.g. "tula" in "UNE-TULA"), a foreign currency or a foreign acronym.
+    # The lookarounds work across hyphens: "UAEH-ESTE" does not mask "UAEH-ESTL".
+    code_masked = re.sub(
+        rf"(?<![\w-]){re.escape(request.university)}(?![\w-])", " ", text
+    )
+    if _has_joined_words(code_masked):
         return "MALFORMED_TEXT"
 
     if not extract_numbers(text) <= allowed_numbers(request):
@@ -219,11 +228,14 @@ def _validate_explanation(
     if any(marker in detection_text for marker in _INJECTION_MARKERS):
         return "INJECTION_MARKER"
 
-    if any(currency != request.property.currency for currency in _CURRENCY_PATTERN.findall(text)):
+    if any(
+        currency != request.property.currency
+        for currency in _CURRENCY_PATTERN.findall(code_masked)
+    ):
         return "FOREIGN_CURRENCY"
 
     allowed_acronyms = {request.university.upper(), request.property.currency.upper()}
-    if any(token not in allowed_acronyms for token in _ACRONYM_PATTERN.findall(text)):
+    if any(token not in allowed_acronyms for token in _ACRONYM_PATTERN.findall(code_masked)):
         return "FOREIGN_UNIVERSITY"
 
     return None
