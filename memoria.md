@@ -1,6 +1,6 @@
 # Memoria del proyecto — TheHouse GenAI
 
-Última actualización: 2026-11-27
+Última actualización: 2026-11-28
 
 ## Identidad
 
@@ -112,6 +112,9 @@ sigue `PLANNED`. No se hizo push y no se abrieron llaves ni secretos.
   secuencia. Cada intento consume el presupuesto diario: el caso de uso reserva el
   primero y el decorador reserva el reintento, pero solo después de verificar el plazo
   tras el sleep; un plazo vencido o un cupo agotado no consumen slot ni reintentan.
+  El timeout del `GuardedProvider` es el límite real de la secuencia: **6 s en
+  producción**, fijados por `GENAI_TIMEOUT_SECONDS` en `infra/genai.bicep`; los
+  7 s son únicamente el default de `Settings`, no el valor desplegado.
   Evento `provider.call.retry` con `attempt`,
   `error_code` y `request_id` (inyectado por el filtro del logger del decorador). No
   se añadió ninguna etiqueta de métrica: los contadores existentes registran el
@@ -171,6 +174,54 @@ y `git rev-parse origin/main`). No hay ninguna spec `ACTIVE`; 003 sigue `IMPLEME
   1171 passed, 1 warning heredado de `TestClient`; `git diff --check` limpio. Un commit:
   `fix: accept hyphenated university codes in explanation validator (spec 003)`.
   Evidencia detallada en `specs/003-smart-match-explanation/evidence.md`.
+
+## Corrección G10 sobre 003 — calidad de la explicación (2026-11-28)
+
+Autorización: corrección sobre la spec **003** ya `IMPLEMENTED`, en la rama
+`fix/explanation-quality` creada desde `origin/main` (`dc56827`, PR #24, confirmado con
+`git fetch` y `git rev-parse origin/main`). No hay ninguna spec `ACTIVE`; 003 sigue
+`IMPLEMENTED` y `010-integration-thehouse` sigue `PLANNED`. Sin push, sin secretos y sin
+abrir `moderation_lexicon.json`.
+
+- **Bloque 1** (`71f1620`): el incidente **no lo reportó Backend**: lo detectó el
+  operador en la prueba manual desde el contenedor (`az containerapp exec`), revisión
+  `ca-thehouse-genai-u2--0000013`, 2026-11-28 06:12 UTC. Los seis request_id
+  `uni-UTTT`, `uni-UAEH-ESTE`, `uni-UMB-VDC`, `uni-UNE-TULA`, `uni-UMB-JILO` y
+  `uni-UAEH-ESAT` degradaron con `UNKNOWN_SERVICE`: con `property.title:
+  "Cuarto amueblado"` y sin `amueblado` en `services`, el modelo repetía el título.
+  La palabra venía del input, no era una alucinación. La repetición con título neutro
+  (`uni2-*`, revisión `0000015`) dio **6/6 `generated=true`** y confirmó la corrección
+  de universidades del PR #24. `_validate_explanation` añade a `mentioned` los
+  `KNOWN_SERVICES` que aparecen como palabra completa en minúsculas en el título; no
+  cambia el orden ni las demás validaciones, y el fallback sigue sin usar el título
+  (A6).
+- **Bloque 2** (`aae814d`): a petición de Backend (matchScore 70, frase «cumpliendo con
+  lo que pediste» sin nombrar servicios; el reporte no incluyó request_id individual,
+  que no se inventa), prompt `explain_match_v4` = v3 + una sola regla: solo se puede
+  afirmar cumplimiento total si todos los `essentialServices` están en
+  `property.services`, y entonces hay que nombrarlos; si falta alguno, hay que nombrar
+  el que falta. El contexto marca cada esencial con `[PRESENTE]` o `[FALTA]`, calculado
+  en código. Nuevo `UNMET_CLAIM` con lista cerrada de ocho frases y guard de
+  negación/excepción en la misma oración (`no`, `sin`, `excepto`, `menos`, `pero`,
+  `aunque`, `falta`); añadido a `FallbackReason` y a `explain_match_fallbacks_total`.
+  En las pruebas existentes solo cambiaron tres literales de `promptVersion`.
+- **Límites conocidos** (documentados, sin cambios de código): (1) un servicio en el
+  título cuenta como recibido aunque esté negado («sin estacionamiento»); (2)
+  `UNMET_CLAIM` no detecta paráfrasis ni oraciones con negación o excepción; (3) el
+  validador no detecta si el texto afirma que un esencial `[FALTA]` sí está, y eso
+  queda cubierto solo por el prompt.
+- **Gates**: ruff, `mypy src` (37 archivos), `mypy --strict` del script de CI (1 archivo)
+  y `git diff --check` en verde en los tres bloques; `pytest` dio 1174 tests tras el
+  bloque 1 y 1194 tras el bloque 2. El bloque 3 es solo documentación. El único warning
+  es el heredado de `TestClient` (deuda 008). Detalle y pruebas en
+  `specs/003-smart-match-explanation/evidence.md`.
+
+## Decisión sobre 012 — breakdown de ML (2026-11-27)
+
+El equipo decidió **NO implementar** la spec 012 (breakdown de ML) en esta entrega.
+Queda como mejora futura, sin estado `ACTIVE` ni plan aprobado; los borradores de plan
+que circularon para esa spec quedan **anulados** y no deben guiar ninguna
+implementación. No se abre una spec nueva ni se cambia el roadmap de fases.
 
 `004-natural-language-search` (G08) se cerró como **IMPLEMENTED** el 2026-11-18 sobre la
 rama `feature/natural-language-search`, con plan aprobado y las decisiones D1–D13 más los
