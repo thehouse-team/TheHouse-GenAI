@@ -61,3 +61,15 @@
       siguen rechazando servicios no recibidos («estacionamiento», «agua» suelto).
 - [x] «gastos» no se confunde con el servicio «gas».
 - [x] Gates en verde y evidencia registrada; spec sigue `IMPLEMENTED`.
+
+## Corrección G10 sobre códigos universitarios (2026-11-27)
+
+- [x] Los 10 códigos del catálogo, incluidos los seis con guion, se aceptan al ser
+      mencionados junto a `MXN`.
+- [x] `request.university` se enmascara con `(?<![\w-])` + `re.escape` + `(?![\w-])`
+      antes de las validaciones de moneda y siglas (y del detector de palabras pegadas).
+- [x] `_ACRONYM_PATTERN` detecta un código distinto con guion como un solo token.
+- [x] Las partes del código no se añaden a las siglas permitidas: `UMB` solo →
+      `FOREIGN_CURRENCY` y `ESTE` solo → `FOREIGN_UNIVERSITY`.
+- [x] `USD` sigue siendo `FOREIGN_CURRENCY`; el orden de validaciones no cambia.
+- [x] Gates en verde y evidencia registrada; spec sigue `IMPLEMENTED`.

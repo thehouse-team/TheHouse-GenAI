@@ -233,6 +233,65 @@ def test_agua_alone_is_rejected_when_only_agua_caliente_was_received(
     assert caplog.records[-1].fallback_reason == "UNKNOWN_SERVICE"
 
 
+# University codes from the ML catalogue. Six are hyphenated; the validator must
+# accept the received code as a whole without splitting it into stray currencies,
+# acronyms or joined words.
+UNIVERSITY_CODES = (
+    "UTTT",
+    "UAEH-ESTE",
+    "UAEH-ESTL",
+    "UAEH-ESAT",
+    "ITSOEH",
+    "TESJI",
+    "UMB-JILO",
+    "UMB-VDC",
+    "UCAN",
+    "UNE-TULA",
+)
+
+
+@pytest.mark.parametrize("code", UNIVERSITY_CODES)
+def test_received_university_code_is_accepted(code: str) -> None:
+    explanation = f"Coincidencia del 87% con la {code}: cuesta 2800 MXN y cuenta con internet."
+    provider = FakeProvider(text=_completion(explanation))
+
+    response = asyncio.run(ExplainMatch(provider).execute(_request(university=code)))
+
+    assert response.generated is True
+    assert response.explanation == explanation
+
+
+@pytest.mark.parametrize(
+    ("university", "mentioned", "reason"),
+    [
+        # A different hyphenated code is one token, not the received one.
+        ("UAEH-ESTE", "UAEH-ESTL", "FOREIGN_UNIVERSITY"),
+        ("UTTT", "UAEH-ESTE", "FOREIGN_UNIVERSITY"),
+        # Only the whole code is masked: its parts stay forbidden.
+        ("UMB-VDC", "UMB", "FOREIGN_CURRENCY"),
+        ("UAEH-ESTE", "ESTE", "FOREIGN_UNIVERSITY"),
+        # Masking the university does not hide a real foreign currency.
+        ("UAEH-ESTE", "USD", "FOREIGN_CURRENCY"),
+    ],
+)
+def test_other_code_or_part_is_rejected(
+    university: str,
+    mentioned: str,
+    reason: str,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.DEBUG)
+    explanation = f"Coincidencia del 87% con la {mentioned}: cuesta 2800 MXN."
+    provider = FakeProvider(text=_completion(explanation))
+
+    response = asyncio.run(
+        ExplainMatch(provider).execute(_request(university=university))
+    )
+
+    assert response.generated is False
+    assert caplog.records[-1].fallback_reason == reason
+
+
 @pytest.mark.parametrize(
     "error",
     [
