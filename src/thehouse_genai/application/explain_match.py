@@ -40,6 +40,9 @@ from thehouse_genai.domain.text_guard import (
     INJECTION_MARKERS as _INJECTION_MARKERS,
 )
 from thehouse_genai.domain.text_guard import (
+    escape_untrusted as _escape_untrusted,
+)
+from thehouse_genai.domain.text_guard import (
     normalize_for_detection as _normalize_for_detection,
 )
 from thehouse_genai.providers.base import (
@@ -58,7 +61,7 @@ from thehouse_genai.providers.moderation import (
 
 logger = logging.getLogger(__name__)
 
-EXPLAIN_MATCH_PROMPT_VERSION: Final[str] = "explain_match_v3"
+EXPLAIN_MATCH_PROMPT_VERSION: Final[str] = "explain_match_v4"
 
 SYSTEM_PROMPT: Final[str] = (
     "Reglas estrictas:\n"
@@ -78,6 +81,10 @@ SYSTEM_PROMPT: Final[str] = (
     "8. Escribe el porcentaje con el símbolo % (no 'por ciento').\n"
     "9. Responde SOLO con JSON válido {\"explanation\": \"...\"}, sin markdown ni "
     "texto adicional.\n"
+    "10. Solo puedes afirmar que el cuarto cumple lo que pidió el estudiante si TODOS "
+    "sus servicios esenciales están marcados como [PRESENTE] en el contexto; en ese "
+    "caso nómbralos. Si alguno está marcado como [FALTA], nombra ese servicio en la "
+    "explicación.\n"
 )
 
 MAX_WORDS: Final[int] = 60
@@ -118,6 +125,23 @@ _JOINED_SUFFIXES: Final[frozenset[str]] = frozenset(
 _JOINED_ALLOWLIST: Final[frozenset[str]] = frozenset(
     {"porque", "conque", "delimite"}
 )
+# Closed list of total-compliance phrases (eight). A fuller catalogue would need its own
+# evidence, so only these exact Spanish phrases can trigger UNMET_CLAIM.
+_UNMET_CLAIM_PHRASES: Final[tuple[str, ...]] = (
+    "cumple con lo que pediste",
+    "cumpliendo con lo que pediste",
+    "cumple con todo lo que pediste",
+    "cumple con todo",
+    "tiene todo lo que buscas",
+    "tiene todo lo que necesitas",
+    "tiene todo lo que pediste",
+    "satisface todas tus necesidades",
+)
+# A negation or an exception in the same sentence makes the phrase non-committal.
+_UNMET_CLAIM_GUARDS: Final[tuple[str, ...]] = (
+    "no", "sin", "excepto", "menos", "pero", "aunque", "falta",
+)
+_SENTENCE_BOUNDARY_PATTERN: Final[re.Pattern[str]] = re.compile(r"[!?;]|\.(?=\s|$)")
 
 
 class _ExplanationPayload(BaseModel):
@@ -128,14 +152,31 @@ class _ExplanationPayload(BaseModel):
     explanation: str = Field(min_length=1)
 
 
+def _annotate_essential_services(context: str, request: ExplainMatchRequest) -> str:
+    """Mark each essential service as present or missing, computed from the input."""
+
+    prefix = "preferences.essentialServices: "
+    provided = {service.lower() for service in request.property.services}
+    annotated = ", ".join(
+        f"{_escape_untrusted(service)} "
+        f"{'[PRESENTE]' if service.lower() in provided else '[FALTA]'}"
+        for service in request.preferences.essential_services
+    )
+    return "\n".join(
+        f"{prefix}{annotated}" if line.startswith(prefix) else line
+        for line in context.splitlines()
+    )
+
+
 def _build_prompt(request: ExplainMatchRequest) -> str:
     """Wrap the allowlisted context in explicit untrusted-data delimiters."""
 
+    context = _annotate_essential_services(request.to_context(), request)
     return (
         "Explica por qué esta propiedad coincide con las preferencias del estudiante. "
         "Usa solo estos datos.\n"
         "<untrusted_data>\n"
-        f"{request.to_context()}\n"
+        f"{context}\n"
         "</untrusted_data>\n"
     )
 
@@ -174,6 +215,23 @@ def _has_joined_words(text: str) -> bool:
         for prefix in _JOINED_PREFIXES:
             if token.startswith(prefix) and token[len(prefix) :] in _JOINED_SUFFIXES:
                 return True
+    return False
+
+
+def _has_unmet_claim(text: str, request: ExplainMatchRequest) -> bool:
+    """Report a total-compliance claim while an essential service is missing."""
+
+    provided = {service.lower() for service in request.property.services}
+    if all(service.lower() in provided for service in request.preferences.essential_services):
+        return False
+    for sentence in _SENTENCE_BOUNDARY_PATTERN.split(text.lower()):
+        if any(
+            re.search(rf"\b{re.escape(guard)}\b", sentence)
+            for guard in _UNMET_CLAIM_GUARDS
+        ):
+            continue
+        if any(phrase in sentence for phrase in _UNMET_CLAIM_PHRASES):
+            return True
     return False
 
 
@@ -229,6 +287,9 @@ def _validate_explanation(
         for service in known
     ):
         return "UNKNOWN_SERVICE"
+
+    if _has_unmet_claim(text, request):
+        return "UNMET_CLAIM"
 
     detection_text = _normalize_for_detection(lowered)
     if any(marker in detection_text for marker in _INJECTION_MARKERS):

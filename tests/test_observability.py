@@ -22,6 +22,7 @@ from thehouse_genai.api.request_context import request_id_ctx
 from thehouse_genai.application.explain_match import ExplainMatch
 from thehouse_genai.application.metrics_port import (
     AuthRejectionReason,
+    FallbackReason,
     MetricName,
     MetricsRecorder,
 )
@@ -216,6 +217,23 @@ def test_invalid_json_is_a_successful_call_with_a_fallback() -> None:
     reason = "INVALID_JSON"
     assert _count(registry, MetricName.EXPLAIN_MATCH_FALLBACKS_TOTAL, reason=reason) == 1
     assert _count(registry, MetricName.PROVIDER_ERRORS_TOTAL, code="PROVIDER_TIMEOUT") == 0
+
+
+def test_unmet_claim_is_a_bounded_fallback_reason() -> None:
+    registry = MetricsRegistry()
+    payload = _payload()
+    payload["preferences"]["essentialServices"] = ["internet", "lavadora"]
+    request = ExplainMatchRequest.model_validate(payload)
+    explanation = "Este cuarto cumple con todo lo que pediste."
+    provider = FakeProvider(text=json.dumps({"explanation": explanation}, ensure_ascii=False))
+
+    response = asyncio.run(ExplainMatch(provider, metrics=registry).execute(request))
+
+    assert response.generated is False
+    assert FallbackReason.UNMET_CLAIM.value == "UNMET_CLAIM"
+    assert _count(
+        registry, MetricName.EXPLAIN_MATCH_FALLBACKS_TOTAL, reason="UNMET_CLAIM"
+    ) == 1
 
 
 def test_no_provider_records_only_the_fallback() -> None:
