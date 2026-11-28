@@ -210,6 +210,12 @@ def _validate_explanation(
     known = {service.lower() for service in KNOWN_SERVICES}
     mentioned = {service.lower() for service in request.property.services}
     mentioned.update(service.lower() for service in request.preferences.essential_services)
+    # A known service named in the title comes from the input, not from the model:
+    # echoing it faithfully is not a hallucination. Whole words only, lowercase.
+    title = request.property.title.lower()
+    mentioned.update(
+        service for service in known if re.search(rf"\b{re.escape(service)}\b", title)
+    )
     lowered = text.lower()
     # Backend may send labels outside the initial vocabulary ("agua caliente"). The
     # model may echo them faithfully, so mask those received spans first, longest

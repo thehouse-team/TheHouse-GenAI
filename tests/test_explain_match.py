@@ -189,6 +189,52 @@ def test_received_multiword_services_are_not_rejected() -> None:
     assert response.generated is True
 
 
+def test_service_named_in_the_title_is_treated_as_received() -> None:
+    payload = _payload()
+    payload["property"]["title"] = "Cuarto amueblado"
+    provider = FakeProvider(
+        text=_completion("Este cuarto amueblado coincide con tus preferencias.")
+    )
+
+    response = asyncio.run(
+        ExplainMatch(provider).execute(ExplainMatchRequest.model_validate(payload))
+    )
+
+    assert response.generated is True
+
+
+def test_unreceived_service_is_rejected_even_with_an_unrelated_title(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.DEBUG)
+    payload = _payload()
+    payload["property"]["title"] = "Cuarto individual"
+    provider = FakeProvider(text=_completion("Cuenta con estacionamiento."))
+
+    response = asyncio.run(
+        ExplainMatch(provider).execute(ExplainMatchRequest.model_validate(payload))
+    )
+
+    assert response.generated is False
+    assert caplog.records[-1].fallback_reason == "UNKNOWN_SERVICE"
+
+
+def test_service_in_the_title_does_not_whitelist_another_service(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.DEBUG)
+    payload = _payload()
+    payload["property"]["title"] = "Departamento con estacionamiento"
+    provider = FakeProvider(text=_completion("Cuenta con lavadora."))
+
+    response = asyncio.run(
+        ExplainMatch(provider).execute(ExplainMatchRequest.model_validate(payload))
+    )
+
+    assert response.generated is False
+    assert caplog.records[-1].fallback_reason == "UNKNOWN_SERVICE"
+
+
 def test_gastos_does_not_trigger_the_gas_service() -> None:
     provider = FakeProvider(text=_completion("Los gastos de la propiedad son claros."))
 
